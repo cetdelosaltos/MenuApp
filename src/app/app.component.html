@@ -1,0 +1,110 @@
+<div class="app-layout">
+  
+  <!-- Global Header (Hidden in print) -->
+  <header class="app-header no-print">
+    <div class="header-content-wrap">
+      
+      <!-- Brand Logo -->
+      <div class="app-brand" (click)="setTab('menu')">
+        <div class="brand-icon-box">
+          <app-icon name="food" [size]="22" extraClass="text-white"></app-icon>
+        </div>
+        <div class="brand-text">
+          <h1 class="brand-title">Menú Familiar</h1>
+          <span class="brand-subtitle">Planificador & Compras</span>
+        </div>
+      </div>
+
+      <!-- Desktop Navigation Links -->
+      <nav class="app-desktop-nav">
+        <button class="nav-item-btn" [class.active]="activeTab() === 'menu'" (click)="setTab('menu')">
+          <app-icon name="calendar" [size]="18"></app-icon>
+          <span>Menú Semanal</span>
+        </button>
+
+        <button class="nav-item-btn" [class.active]="activeTab() === 'shopping'" (click)="setTab('shopping')">
+          <app-icon name="shopping-cart" [size]="18"></app-icon>
+          <span>Lista de Compras</span>
+          <span *ngIf="shoppingService.pendingItemsCount() > 0" class="nav-counter-badge">
+            {{ shoppingService.pendingItemsCount() }}
+          </span>
+        </button>
+
+        <button class="nav-item-btn" [class.active]="activeTab() === 'history'" (click)="setTab('history')">
+          <app-icon name="history" [size]="18"></app-icon>
+          <span>Historial</span>
+        </button>
+
+        <button class="nav-item-btn" [class.active]="activeTab() === 'catalog'" (click)="setTab('catalog')">
+          <app-icon name="book" [size]="18"></app-icon>
+          <span>Recetas & Ingredientes</span>
+        </button>
+
+        <button class="nav-item-btn" [class.active]="activeTab() === 'settings'" (click)="setTab('settings')">
+          <app-icon name="settings" [size]="18"></app-icon>
+          <span>Configuración</span>
+        </button>
+      </nav>
+
+      <!-- Right Header Indicators (Household Code & Connection) -->
+      <div class="header-right-badges">
+        
+        <!-- Household Code Badge -->
+        <div class="household-badge" (click)="setTab('settings')" title="Código de Hogar Compartido">
+          <app-icon name="home" [size]="14" extraClass="text-emerald"></app-icon>
+          <span class="household-code-text">{{ syncService.config().householdCode || 'HOGAR' }}</span>
+        </div>
+
+        <!-- Connection Status Indicator -->
+        <div class="connection-status-dot" [class.is-online]="syncService.isOnline()" [title]="syncService.isOnline() ? 'En línea' : 'Modo Offline'">
+          <app-icon [name]="syncService.isOnline() ? 'wifi' : 'wifi-off'" [size]="14"></app-icon>
+        </div>
+
+      </div>
+
+    </div>
+  </header>
+
+  <!-- Main Content Container -->
+  <main class="app-main-container">
+    
+    <app-weekly-menu *ngIf="activeTab() === 'menu'"></app-weekly-menu>
+    <app-shopping-list *ngIf="activeTab() === 'shopping'"></app-shopping-list>
+    <app-history *ngIf="activeTab() === 'history'"></app-history>
+    <app-catalog *ngIf="activeTab() === 'catalog'"></app-catalog>
+    <app-settings *ngIf="activeTab() === 'settings'"></app-settings>
+
+  </main>
+
+  <!-- Mobile Bottom Navigation Bar (Hidden in print & desktop) -->
+  <nav class="app-mobile-nav no-print">
+    <button class="mobile-nav-btn" [class.active]="activeTab() === 'menu'" (click)="setTab('menu')">
+      <app-icon name="calendar" [size]="20"></app-icon>
+      <span>Menú</span>
+    </button>
+
+    <button class="mobile-nav-btn" [class.active]="activeTab() === 'shopping'" (click)="setTab('shopping')">
+      <div class="mobile-icon-wrap">
+        <app-icon name="shopping-cart" [size]="20"></app-icon>
+        <span *ngIf="shoppingService.pendingItemsCount() > 0" class="mobile-badge-dot"></span>
+      </div>
+      <span>Compras</span>
+    </button>
+
+    <button class="mobile-nav-btn" [class.active]="activeTab() === 'history'" (click)="setTab('history')">
+      <app-icon name="history" [size]="20"></app-icon>
+      <span>Historial</span>
+    </button>
+
+    <button class="mobile-nav-btn" [class.active]="activeTab() === 'catalog'" (click)="setTab('catalog')">
+      <app-icon name="book" [size]="20"></app-icon>
+      <span>Recetas</span>
+    </button>
+
+    <button class="mobile-nav-btn" [class.active]="activeTab() === 'settings'" (click)="setTab('settings')">
+      <app-icon name="settings" [size]="20"></app-icon>
+      <span>Ajustes</span>
+    </button>
+  </nav>
+
+</div>
