@@ -25,6 +25,7 @@ export interface Dish {
   householdId: string;
   name: string;
   type: DishType;
+  types?: DishType[]; // Multi-category assignment
   recipeUrl?: string;
   ingredientIds: string[]; // List of associated ingredient IDs
   updatedAt: string;

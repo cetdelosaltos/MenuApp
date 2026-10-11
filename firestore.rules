@@ -1,0 +1,10 @@
+rules_version = '2';
+
+service cloud.firestore {
+  match /databases/{database}/documents {
+    // Permitir lectura y escritura en todas las colecciones del hogar
+    match /households/{householdId}/{document=**} {
+      allow read, write: if true;
+    }
+  }
+}

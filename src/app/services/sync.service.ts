@@ -12,6 +12,7 @@ export class SyncService {
 
   isOnline = computed<boolean>(() => this.firestore.isOnline());
   isSyncing = computed<boolean>(() => this.firestore.isConnecting());
+  permissionError = computed<boolean>(() => this.firestore.permissionError());
   pendingChangesCount = signal<number>(0);
 
   config = computed<HouseholdConfig>(() => ({
@@ -23,10 +24,19 @@ export class SyncService {
     lastSyncAt: this.firestore.lastSyncAt()
   }));
 
-  lastSyncResult = signal<{ success: boolean; message: string; timestamp?: string } | null>({
-    success: true,
-    message: 'Conectado a Firebase Firestore en tiempo real.',
-    timestamp: new Date().toISOString()
+  lastSyncResult = computed<{ success: boolean; message: string; timestamp?: string } | null>(() => {
+    if (this.firestore.permissionError()) {
+      return {
+        success: false,
+        message: 'Error de permisos: Faltan configurar las Reglas de Seguridad en Firebase Firestore.',
+        timestamp: this.firestore.lastSyncAt()
+      };
+    }
+    return {
+      success: true,
+      message: 'Conectado a Firebase Firestore en tiempo real.',
+      timestamp: this.firestore.lastSyncAt()
+    };
   });
 
   async init(): Promise<void> {}
@@ -49,11 +59,7 @@ export class SyncService {
   }
 
   async syncNow(): Promise<boolean> {
-    this.lastSyncResult.set({
-      success: true,
-      message: 'Sincronizado en tiempo real con Firebase Firestore.',
-      timestamp: new Date().toISOString()
-    });
-    return true;
+    this.firestore.setHousehold(this.firestore.householdCode(), this.firestore.householdName());
+    return !this.firestore.permissionError();
   }
 }

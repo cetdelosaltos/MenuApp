@@ -1,6 +1,7 @@
 import { Injectable, inject, signal, computed, effect } from '@angular/core';
 import { FirestoreService } from './firestore.service';
 import { WeeklyMenu, DayPlan, PlannedDishItem, Dish, Ingredient, DishType } from '../models/types';
+import { isSameText } from '../utils/string-utils';
 
 @Injectable({
   providedIn: 'root'
@@ -9,7 +10,7 @@ export class MenuService {
   private firestoreService = inject(FirestoreService);
 
   currentWeekStartDate = signal<string>(this.getDefaultWeekStartDate());
-  
+
   // Real-time signals from Firestore
   allDishes = computed<Dish[]>(() => this.firestoreService.dishes());
   allIngredients = computed<Ingredient[]>(() => this.firestoreService.ingredients());
@@ -28,29 +29,16 @@ export class MenuService {
   readonly dayNames = ['Domingo', 'Lunes', 'Martes', 'Miércoles', 'Jueves', 'Viernes', 'Sábado'];
 
   constructor() {
-    // Whenever current week starts and isn't saved yet in Firestore, auto-create
-    effect(() => {
-      const weekStart = this.currentWeekStartDate();
-      const menus = this.firestoreService.weeklyMenus();
-      const isConnecting = this.firestoreService.isConnecting();
-
-      if (!isConnecting && menus.length > 0) {
-        const found = menus.find(m => m.id === weekStart || m.weekStartDate === weekStart);
-        if (!found) {
-          const empty = this.createEmptyMenuObject(weekStart);
-          this.firestoreService.saveWeeklyMenu(empty);
-        }
-      }
-    });
+    // Empty menus are never auto-saved to Firestore.
+    // They are computed in-memory and only persisted when the user actually plans a dish.
   }
 
   getSundayOfWeek(d: Date): Date {
-    const date = new Date(d);
+    const date = new Date(d.getFullYear(), d.getMonth(), d.getDate(), 12, 0, 0);
     const day = date.getDay(); // 0 = Domingo
-    const diff = date.getDate() - day;
-    const sunday = new Date(date.setDate(diff));
-    sunday.setHours(0, 0, 0, 0);
-    return sunday;
+    date.setDate(date.getDate() - day);
+    date.setHours(0, 0, 0, 0);
+    return date;
   }
 
   formatDateISO(d: Date): string {
@@ -70,22 +58,28 @@ export class MenuService {
   getDefaultWeekStartDate(): string {
     const today = new Date();
     const sunday = this.getSundayOfWeek(today);
-    // Si hoy es domingo, mostrar la semana siguiente (+7 días)
-    if (today.getDay() === 0) {
-      sunday.setDate(sunday.getDate() + 7);
-    }
     return this.formatDateISO(sunday);
+  }
+
+  getWeekRangeDisplay(weekStartDate?: string): string {
+    const startStr = weekStartDate || this.currentWeekStartDate();
+    if (!startStr) return '';
+    const parts = startStr.split('-').map(Number);
+    const sunday = new Date(parts[0], parts[1] - 1, parts[2], 12, 0, 0);
+    const saturday = new Date(sunday);
+    saturday.setDate(sunday.getDate() + 6);
+    return `${this.formatDisplayDate(sunday)} - ${this.formatDisplayDate(saturday)}`;
   }
 
   private createEmptyMenuObject(weekStartDate: string): WeeklyMenu {
     const parts = weekStartDate.split('-').map(Number);
-    const sundayDate = new Date(parts[0], parts[1] - 1, parts[2]);
+    const sundayDate = new Date(parts[0], parts[1] - 1, parts[2], 12, 0, 0);
 
     return {
       id: weekStartDate,
       householdId: this.firestoreService.householdCode(),
       weekStartDate: weekStartDate,
-      title: `Semana del Domingo ${this.formatDisplayDate(sundayDate)}`,
+      title: `Semana del ${this.formatDisplayDate(sundayDate)}`,
       days: {
         0: { breakfast: null, lunchProtein: null, lunchSides: [], dinner: null },
         1: { breakfast: null, lunchProtein: null, lunchSides: [], dinner: null },
@@ -105,23 +99,26 @@ export class MenuService {
 
   async loadMenuForWeek(weekStartDate: string): Promise<WeeklyMenu> {
     this.currentWeekStartDate.set(weekStartDate);
-    const existing = this.firestoreService.weeklyMenus().find(m => m.id === weekStartDate);
+    const existing = this.firestoreService.weeklyMenus().find(
+      m => m.id === weekStartDate || m.weekStartDate === weekStartDate
+    );
     if (existing) return existing;
 
-    const newMenu = this.createEmptyMenuObject(weekStartDate);
-    await this.firestoreService.saveWeeklyMenu(newMenu);
-    return newMenu;
+    // Do NOT write empty menu to Firestore; return an in-memory draft
+    return this.createEmptyMenuObject(weekStartDate);
   }
 
   async previousWeek(): Promise<void> {
-    const current = new Date(this.currentWeekStartDate() + 'T00:00:00');
+    const parts = this.currentWeekStartDate().split('-').map(Number);
+    const current = new Date(parts[0], parts[1] - 1, parts[2], 12, 0, 0);
     current.setDate(current.getDate() - 7);
     const prevSundayStr = this.formatDateISO(current);
     await this.loadMenuForWeek(prevSundayStr);
   }
 
   async nextWeek(): Promise<void> {
-    const current = new Date(this.currentWeekStartDate() + 'T00:00:00');
+    const parts = this.currentWeekStartDate().split('-').map(Number);
+    const current = new Date(parts[0], parts[1] - 1, parts[2], 12, 0, 0);
     current.setDate(current.getDate() + 7);
     const nextSundayStr = this.formatDateISO(current);
     await this.loadMenuForWeek(nextSundayStr);
@@ -188,11 +185,19 @@ export class MenuService {
   async createOrUpdateDish(dishData: Partial<Dish>): Promise<Dish> {
     const now = new Date().toISOString();
     const dishId = dishData.id || `dish_${Date.now()}_${Math.random().toString(36).substring(2, 6)}`;
+    const types: DishType[] = dishData.types?.length
+      ? dishData.types
+      : dishData.type
+        ? [dishData.type]
+        : ['protein'];
+    const primaryType: DishType = types[0] || 'protein';
+
     const dish: Dish = {
       id: dishId,
       householdId: this.firestoreService.householdCode(),
       name: dishData.name || 'Sin Nombre',
-      type: dishData.type || 'protein',
+      type: primaryType,
+      types: types,
       recipeUrl: dishData.recipeUrl || '',
       ingredientIds: dishData.ingredientIds || [],
       updatedAt: now
@@ -205,7 +210,7 @@ export class MenuService {
   async createOrGetIngredient(name: string, categoryId = 'cat_viveres'): Promise<Ingredient> {
     const cleanName = name.trim();
     const existing = this.allIngredients()
-      .find(i => !i.deletedAt && i.name.toLowerCase() === cleanName.toLowerCase());
+      .find(i => !i.deletedAt && isSameText(i.name, cleanName));
 
     if (existing) {
       return existing;

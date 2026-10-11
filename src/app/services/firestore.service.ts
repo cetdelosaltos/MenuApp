@@ -42,6 +42,8 @@ export class FirestoreService {
   isConnecting = signal<boolean>(true);
   lastSyncAt = signal<string>(new Date().toISOString());
 
+  permissionError = signal<boolean>(false);
+
   private unsubscribers: Unsubscribe[] = [];
   private isSeeding = false;
 
@@ -96,8 +98,26 @@ export class FirestoreService {
     this.unsubscribers.forEach(unsub => unsub());
     this.unsubscribers = [];
     this.isConnecting.set(true);
+    this.permissionError.set(false);
 
     const basePath = `households/${householdCode}`;
+
+    const handleError = (context: string, err: any) => {
+      console.error(`Error in ${context} snapshot:`, err);
+      this.isConnecting.set(false);
+      const msg = err?.message || String(err);
+      if (err?.code === 'permission-denied' || msg.includes('insufficient permissions')) {
+        this.permissionError.set(true);
+      }
+    };
+
+    let loadedCount = 0;
+    const markLoaded = () => {
+      loadedCount++;
+      if (loadedCount >= 4) {
+        this.isConnecting.set(false);
+      }
+    };
 
     // 1. Categories Real-time Listener
     const catCol = collection(this.firestore, `${basePath}/categories`);
@@ -109,9 +129,9 @@ export class FirestoreService {
         cats.sort((a, b) => (a.orderIndex ?? 0) - (b.orderIndex ?? 0));
         this.categories.set(cats);
       }
-      this.isConnecting.set(false);
+      markLoaded();
       this.lastSyncAt.set(new Date().toISOString());
-    }, (err) => console.error('Error in categories snapshot:', err));
+    }, (err) => handleError('categories', err));
     this.unsubscribers.push(unsubCat);
 
     // 2. Ingredients Real-time Listener
@@ -125,8 +145,9 @@ export class FirestoreService {
           .filter(i => !i.deletedAt);
         this.ingredients.set(ings);
       }
+      markLoaded();
       this.lastSyncAt.set(new Date().toISOString());
-    }, (err) => console.error('Error in ingredients snapshot:', err));
+    }, (err) => handleError('ingredients', err));
     this.unsubscribers.push(unsubIng);
 
     // 3. Dishes Real-time Listener
@@ -140,8 +161,9 @@ export class FirestoreService {
           .filter(d => !d.deletedAt);
         this.dishes.set(dishes);
       }
+      markLoaded();
       this.lastSyncAt.set(new Date().toISOString());
-    }, (err) => console.error('Error in dishes snapshot:', err));
+    }, (err) => handleError('dishes', err));
     this.unsubscribers.push(unsubDish);
 
     // 4. Weekly Menus Real-time Listener
@@ -155,8 +177,9 @@ export class FirestoreService {
           .filter(m => !m.deletedAt);
         this.weeklyMenus.set(menus);
       }
+      markLoaded();
       this.lastSyncAt.set(new Date().toISOString());
-    }, (err) => console.error('Error in weeklyMenus snapshot:', err));
+    }, (err) => handleError('weeklyMenus', err));
     this.unsubscribers.push(unsubMenu);
 
     // 5. Shopping Items Real-time Listener
@@ -167,7 +190,7 @@ export class FirestoreService {
         .filter(s => !s.deletedAt);
       this.shoppingItems.set(items);
       this.lastSyncAt.set(new Date().toISOString());
-    }, (err) => console.error('Error in shoppingItems snapshot:', err));
+    }, (err) => handleError('shoppingItems', err));
     this.unsubscribers.push(unsubShop);
   }
 
@@ -217,12 +240,12 @@ export class FirestoreService {
   }
 
   private async seedSampleMenu(householdCode: string): Promise<void> {
+    if (this.weeklyMenus().length > 0) return;
+
     const today = new Date();
-    const sunday = new Date(today);
-    sunday.setDate(today.getDate() - today.getDay());
-    if (today.getDay() === 0) {
-      sunday.setDate(sunday.getDate() + 7);
-    }
+    const sunday = new Date(today.getFullYear(), today.getMonth(), today.getDate(), 12, 0, 0);
+    sunday.setDate(sunday.getDate() - sunday.getDay());
+
     const year = sunday.getFullYear();
     const month = String(sunday.getMonth() + 1).padStart(2, '0');
     const day = String(sunday.getDate()).padStart(2, '0');

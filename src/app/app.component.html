@@ -6,9 +6,7 @@
       
       <!-- Brand Logo -->
       <div class="app-brand" (click)="setTab('menu')">
-        <div class="brand-icon-box">
-          <app-icon name="food" [size]="22" extraClass="text-white"></app-icon>
-        </div>
+        <img src="app-icon.png" alt="Menú Familiar" class="brand-logo-img" />
         <div class="brand-text">
           <h1 class="brand-title">Menú Familiar</h1>
           <span class="brand-subtitle">Planificador & Compras</span>
@@ -46,20 +44,12 @@
         </button>
       </nav>
 
-      <!-- Right Header Indicators (Household Code & Connection) -->
-      <div class="header-right-badges">
-        
-        <!-- Household Code Badge -->
-        <div class="household-badge" (click)="setTab('settings')" title="Código de Hogar Compartido">
-          <app-icon name="home" [size]="14" extraClass="text-emerald"></app-icon>
-          <span class="household-code-text">{{ syncService.config().householdCode || 'HOGAR' }}</span>
-        </div>
-
-        <!-- Connection Status Indicator -->
-        <div class="connection-status-dot" [class.is-online]="syncService.isOnline()" [title]="syncService.isOnline() ? 'En línea' : 'Modo Offline'">
+      <!-- Right Header Indicators (WiFi icon on top, Household Code below) -->
+      <div class="header-right-badges" (click)="setTab('settings')" [title]="'Hogar: ' + (syncService.config().householdCode || 'HOGAR') + ' (' + (syncService.isOnline() ? 'En línea' : 'Modo Offline') + ')'">
+        <div class="connection-status-dot" [class.is-online]="syncService.isOnline()">
           <app-icon [name]="syncService.isOnline() ? 'wifi' : 'wifi-off'" [size]="14"></app-icon>
         </div>
-
+        <span class="household-code-text">{{ syncService.config().householdCode || 'HOGAR' }}</span>
       </div>
 
     </div>
@@ -68,9 +58,19 @@
   <!-- Main Content Container -->
   <main class="app-main-container">
     
+    <!-- Firebase Permissions Alert Banner -->
+    <div *ngIf="syncService.permissionError()" class="firebase-permission-banner">
+      <div class="banner-icon">⚠️</div>
+      <div class="banner-text">
+        <strong>Error de permisos en Firebase Firestore:</strong>
+        Las reglas de seguridad en la nube no permiten leer o escribir datos. Es necesario publicar las reglas en la consola de Firebase.
+      </div>
+      <button class="banner-btn" (click)="setTab('settings')">Ver Instrucciones</button>
+    </div>
+
     <app-weekly-menu *ngIf="activeTab() === 'menu'"></app-weekly-menu>
     <app-shopping-list *ngIf="activeTab() === 'shopping'"></app-shopping-list>
-    <app-history *ngIf="activeTab() === 'history'"></app-history>
+    <app-history *ngIf="activeTab() === 'history'" (openMenu)="setTab('menu')"></app-history>
     <app-catalog *ngIf="activeTab() === 'catalog'"></app-catalog>
     <app-settings *ngIf="activeTab() === 'settings'"></app-settings>
 

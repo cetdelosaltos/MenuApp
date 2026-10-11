@@ -1,3 +1,4 @@
+@import '@angular/material/prebuilt-themes/azure-blue.css';
 @import url('https://fonts.googleapis.com/css2?family=Outfit:wght@400;500;600;700;800&family=Plus+Jakarta+Sans:wght@400;500;600;700&display=swap');
 
 :root {
@@ -18,7 +19,7 @@
   --accent-blue: #3b82f6;
   --accent-purple: #8b5cf6;
 
-  --bg-main: #f8fafc;
+  --bg-main: #ffffff;
   --bg-surface: #ffffff;
   --bg-card: #ffffff;
   --border-color: #e2e8f0;
@@ -28,14 +29,14 @@
   --text-muted: #64748b;
   --text-light: #94a3b8;
 
-  --shadow-sm: 0 1px 2px 0 rgb(0 0 0 / 0.05);
-  --shadow-md: 0 4px 6px -1px rgb(0 0 0 / 0.08), 0 2px 4px -2px rgb(0 0 0 / 0.05);
-  --shadow-lg: 0 10px 15px -3px rgb(0 0 0 / 0.08), 0 4px 6px -4px rgb(0 0 0 / 0.04);
-  --shadow-xl: 0 20px 25px -5px rgb(0 0 0 / 0.1), 0 8px 10px -6px rgb(0 0 0 / 0.06);
+  --shadow-sm: none;
+  --shadow-md: 0 2px 4px 0 rgb(0 0 0 / 0.04);
+  --shadow-lg: 0 4px 6px -1px rgb(0 0 0 / 0.06);
+  --shadow-xl: 0 10px 15px -3px rgb(0 0 0 / 0.08);
 
-  --radius-sm: 8px;
-  --radius-md: 12px;
-  --radius-lg: 16px;
+  --radius-sm: 4px;
+  --radius-md: 6px;
+  --radius-lg: 8px;
   --radius-full: 9999px;
 }
 
@@ -90,12 +91,12 @@ input, select, textarea {
 
 /* Utility Animations */
 @keyframes fadeIn {
-  from { opacity: 0; transform: translateY(6px); }
-  to { opacity: 1; transform: translateY(0); }
+  from { opacity: 0; }
+  to { opacity: 1; }
 }
 
 .animate-fade {
-  animation: fadeIn 0.25s ease-out forwards;
+  animation: fadeIn 0.2s ease-out;
 }
 
 /* Badges & Tags */
@@ -116,26 +117,87 @@ input, select, textarea {
 .badge-purple { background-color: #ede9fe; color: #5b21b6; }
 .badge-gray { background-color: #f1f5f9; color: #475569; }
 
-/* PRINT STYLES - Optimized strictly for 1 single Letter page */
+/* CDK Drag & Drop Global Styles */
+.cdk-drag-preview {
+  box-sizing: border-box;
+  border-radius: 8px;
+  box-shadow: 0 12px 28px rgba(0, 0, 0, 0.22), 0 4px 10px rgba(0, 0, 0, 0.1);
+  background: #ffffff;
+  opacity: 0.98;
+  z-index: 10000 !important;
+}
+
+.cdk-drag-preview.draggable-dish {
+  padding: 8px 10px;
+  border: 2px solid #10b981;
+  min-width: 140px;
+  max-width: 220px;
+}
+
+.cdk-drag-preview.side-chip-item,
+.cdk-drag-preview.side-chip-flat {
+  background: #ecfdf5;
+  border: 1.5px solid #059669;
+  padding: 5px 8px;
+  color: #065f46;
+  font-weight: 600;
+  font-size: 0.8rem;
+  display: flex;
+  align-items: center;
+  gap: 6px;
+}
+
+/* Eliminate fly-off release animation completely */
+.cdk-drag-animating,
+.cdk-drag-preview.cdk-drag-animating {
+  transition: none !important;
+  animation: none !important;
+}
+
+.print-only {
+  display: none !important;
+}
+
+/* PRINT STYLES - Strictly Black & White, Simple Borders, No Shadows/Colors, Fits 1 Letter Page */
 @media print {
   @page {
     size: letter landscape;
-    margin: 0.8cm;
+    margin: 0.6cm;
   }
 
   body {
     background: #ffffff !important;
     color: #000000 !important;
-    font-size: 8.5pt !important;
+    font-family: Arial, Helvetica, sans-serif !important;
+    font-size: 8pt !important;
     line-height: 1.15 !important;
+    -webkit-print-color-adjust: exact !important;
+    print-color-adjust: exact !important;
+  }
+
+  * {
+    box-shadow: none !important;
+    text-shadow: none !important;
   }
 
   .no-print,
   .app-header,
   .app-nav,
+  .top-nav-bar,
   .action-buttons,
   .modal-overlay,
-  .quick-edit-toolbar {
+  .quick-edit-toolbar,
+  .mobile-flat-view,
+  .mobile-table-view,
+  .mobile-day-selector,
+  .recipe-link,
+  .btn-side-remove,
+  .btn-add-side,
+  .ing-count-chip,
+  .ingredients-summary,
+  .cell-placeholder,
+  .notes-input,
+  .toast-popup {
     display: none !important;
   }
 
@@ -143,69 +205,157 @@ input, select, textarea {
     display: block !important;
   }
 
-  .print-page-container {
-    width: 100% !important;
-    max-width: 100% !important;
-    margin: 0 !important;
-    padding: 0 !important;
-  }
-
   .print-title-header {
     text-align: center !important;
     margin-bottom: 6px !important;
+    border-bottom: 1.5px solid #000000 !important;
+    padding-bottom: 3px !important;
   }
 
   .print-title-header h1 {
-    font-size: 15pt !important;
-    font-weight: 800 !important;
+    font-size: 13pt !important;
+    font-weight: bold !important;
     text-transform: uppercase !important;
-    color: #1e293b !important;
-    margin-bottom: 2px !important;
+    color: #000000 !important;
+    margin: 0 0 1px 0 !important;
+  }
+
+  .print-sub {
+    font-size: 8pt !important;
+    color: #000000 !important;
+    margin: 0 !important;
+    font-style: italic !important;
+  }
+
+  .desktop-table-view {
+    display: block !important;
+    width: 100% !important;
+    overflow: visible !important;
+  }
+
+  .table-card-wrapper,
+  .table-responsive {
+    background: transparent !important;
+    border: none !important;
+    box-shadow: none !important;
+    overflow: visible !important;
+    margin: 0 !important;
+    padding: 0 !important;
+    width: 100% !important;
   }
 
   .print-table {
     width: 100% !important;
     border-collapse: collapse !important;
     table-layout: fixed !important;
+    background: #ffffff !important;
+    border: 1.5px solid #000000 !important;
   }
 
   .print-table th,
   .print-table td {
-    border: 1.5px solid #475569 !important;
+    border: 1px solid #000000 !important;
     padding: 4px 3px !important;
     vertical-align: top !important;
     word-break: break-word !important;
-    font-size: 8pt !important;
+    font-size: 7.8pt !important;
+    color: #000000 !important;
+    background: #ffffff !important;
+    line-height: 1.15 !important;
   }
 
-  .print-table th {
-    background-color: #e2e8f0 !important;
-    font-weight: 700 !important;
+  .print-table thead th {
+    background: #ffffff !important;
+    color: #000000 !important;
+    font-weight: bold !important;
     text-align: center !important;
-    font-size: 9pt !important;
+    border-bottom: 1.5px solid #000000 !important;
+    font-size: 8.5pt !important;
+  }
+
+  .print-table .col-section-header {
+    width: 12% !important;
+  }
+
+  .print-table .col-day-header .day-name {
+    font-size: 8.5pt !important;
+    font-weight: bold !important;
+    color: #000000 !important;
+    display: block !important;
+  }
+
+  .print-table .col-day-header .day-date {
+    font-size: 7pt !important;
+    color: #333333 !important;
+    font-weight: normal !important;
+    display: block !important;
   }
 
   .print-table .row-header {
-    background-color: #f1f5f9 !important;
-    font-weight: 700 !important;
-    width: 13% !important;
-    font-size: 8pt !important;
+    background: #ffffff !important;
+    font-weight: bold !important;
+    width: 12% !important;
+    border-right: 1.5px solid #000000 !important;
+  }
+
+  .print-table .meal-badge {
+    background: transparent !important;
+    color: #000000 !important;
+    border: none !important;
+    border-radius: 0 !important;
+    padding: 0 !important;
+    font-size: 8.5pt !important;
+    font-weight: bold !important;
+    text-transform: uppercase !important;
+    box-shadow: none !important;
+  }
+
+  .print-table .meal-sub {
+    font-size: 7pt !important;
+    color: #333333 !important;
+    font-weight: normal !important;
+    text-transform: none !important;
+    display: block !important;
   }
 
   .print-table .dish-name {
-    font-weight: 700 !important;
-    color: #0f172a !important;
+    font-weight: bold !important;
+    color: #000000 !important;
     display: block !important;
     margin-bottom: 2px !important;
+    font-size: 8.2pt !important;
   }
 
-  .print-table .dish-sub {
-    font-size: 7.5pt !important;
-    color: #334155 !important;
+  .print-table .sides-container {
+    display: flex !important;
+    flex-direction: column !important;
+    gap: 1px !important;
+  }
+
+  .print-table .side-chip-item {
+    background: transparent !important;
+    border: none !important;
+    border-radius: 0 !important;
+    padding: 0 !important;
+    box-shadow: none !important;
     display: block !important;
   }
 
-  .print-table .notes-box {
-    min-height: 25px !important;
+  .print-table .side-name {
+    font-size: 7.8pt !important;
+    color: #000000 !important;
+  }
+
+  .print-table .side-name::before {
+    content: "• ";
+    font-weight: bold;
+  }
+
+  .print-table .print-notes-text {
+    display: block !important;
+    font-size: 7.5pt !important;
+    color: #000000 !important;
+    white-space: pre-wrap !important;
+    line-height: 1.15 !important;
   }
 }

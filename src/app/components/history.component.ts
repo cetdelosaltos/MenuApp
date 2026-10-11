@@ -1,4 +1,4 @@
-import { Component, inject, computed } from '@angular/core';
+import { Component, inject, computed, Output, EventEmitter } from '@angular/core';
 import { CommonModule } from '@angular/common';
 import { FirestoreService } from '../services/firestore.service';
 import { MenuService } from '../services/menu.service';
@@ -227,6 +227,8 @@ export class HistoryComponent {
   private firestoreService = inject(FirestoreService);
   menuService = inject(MenuService);
 
+  @Output() openMenu = new EventEmitter<void>();
+
   menus = computed<WeeklyMenu[]>(() => {
     const list = [...this.firestoreService.weeklyMenus()];
     list.sort((a, b) => b.weekStartDate.localeCompare(a.weekStartDate));
@@ -235,7 +237,7 @@ export class HistoryComponent {
 
   async loadWeek(weekStartDate: string): Promise<void> {
     await this.menuService.loadMenuForWeek(weekStartDate);
-    window.location.hash = '#/menu';
+    this.openMenu.emit();
   }
 
   async cloneToCurrent(m: WeeklyMenu): Promise<void> {
@@ -244,7 +246,7 @@ export class HistoryComponent {
       const currentMenu = await this.menuService.loadMenuForWeek(currentWeekStart);
       currentMenu.days = JSON.parse(JSON.stringify(m.days));
       await this.menuService.saveCurrentMenu(currentMenu);
-      window.location.hash = '#/menu';
+      this.openMenu.emit();
     }
   }
 }

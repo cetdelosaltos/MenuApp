@@ -1,681 +1,647 @@
-import { Component, EventEmitter, Input, OnInit, Output, inject, signal, computed } from '@angular/core';
+import { Component, EventEmitter, Input, OnInit, Output, inject, signal, computed, HostListener, ElementRef } from '@angular/core';
 import { CommonModule } from '@angular/common';
 import { FormsModule } from '@angular/forms';
 import { MenuService } from '../services/menu.service';
 import { FirestoreService } from '../services/firestore.service';
 import { Dish, Ingredient, Category, DishType } from '../models/types';
 import { IconComponent } from './icon.component';
+import { matchesSearch, isSameText } from '../utils/string-utils';
 
 @Component({
   selector: 'app-dish-edit',
   standalone: true,
   imports: [CommonModule, FormsModule, IconComponent],
   template: `
-    <div class="dish-edit-page animate-fade">
+    <div class="dish-sheet-overlay" (click)="onBackdropClick($event)">
       
-      <!-- Top Navigation & Actions Bar -->
-      <div class="top-bar">
-        <div class="top-bar-left">
-          <button class="btn-back" (click)="onCancel()" title="Volver al catálogo">
-            <app-icon name="chevron-left" [size]="20"></app-icon>
-            <span>Volver al Catálogo</span>
-          </button>
-          <div class="page-title-group">
-            <h2 class="page-title">
-              {{ isEditing ? 'Editar Plato: ' + (dishName || 'Sin Nombre') : 'Crear Nuevo Plato / Receta' }}
-            </h2>
-            <p class="page-subtitle">
-              {{ isEditing ? 'Modifica los detalles, enlace y lista de ingredientes de este plato.' : 'Define el nombre, tipo de plato, enlace y añade sus ingredientes.' }}
-            </p>
+      <div
+        class="dish-sheet-container"
+        [style.transform]="sheetTranslateY > 0 ? 'translateY(' + sheetTranslateY + 'px)' : ''"
+        (click)="$event.stopPropagation()"
+      >
+        <!-- Top Drag Handle for Swipe Down to Dismiss -->
+        <div
+          class="sheet-handle-bar"
+          (touchstart)="onTouchStart($event)"
+          (touchmove)="onTouchMove($event)"
+          (touchend)="onTouchEnd()"
+        >
+          <div class="handle-pill"></div>
+        </div>
+
+        <!-- Top Navigation & Action Header (2 rows) -->
+        <div class="edit-header-bar">
+          <!-- Row 1: Title (left) and Close (right) -->
+          <div class="header-nav-row">
+            <div class="edit-header-title">
+              <h2>{{ isEditing ? 'Editar Plato' : 'Crear Plato' }}</h2>
+            </div>
+
+            <button type="button" class="btn-back-flat" (click)="onCancel()" title="Cerrar">
+              <app-icon name="x" [size]="15"></app-icon>
+              <span>Cerrar</span>
+            </button>
+          </div>
+
+          <!-- Row 2: Action Buttons (100% width, fully visible on any screen) -->
+          <div class="edit-header-actions">
+            <button *ngIf="isEditing" type="button" class="btn-head-del" (click)="onDeleteDish()" title="Eliminar Plato">
+              <app-icon name="trash" [size]="15"></app-icon>
+              <span>Eliminar</span>
+            </button>
+            <button type="button" class="btn-head-cancel" (click)="onCancel()">Cancelar</button>
+            <button type="button" class="btn-head-save" (click)="onSaveDish()" [disabled]="!dishName.trim()" title="Guardar">
+              <app-icon name="check" [size]="16"></app-icon>
+              <span>Guardar</span>
+            </button>
           </div>
         </div>
 
-        <div class="top-bar-actions">
-          <button *ngIf="isEditing" class="btn-delete" (click)="onDeleteDish()" title="Eliminar este plato">
-            <app-icon name="trash" [size]="16"></app-icon>
-            <span>Eliminar Plato</span>
-          </button>
-          <button class="btn-cancel" (click)="onCancel()">Cancelar</button>
-          <button class="btn-save" (click)="onSaveDish()" [disabled]="!dishName.trim()">
-            <app-icon name="check" [size]="18"></app-icon>
-            <span>Guardar Cambios</span>
-          </button>
-        </div>
-      </div>
-
-      <!-- Main Form Layout Grid -->
-      <div class="form-layout-grid">
+        <!-- Scrollable Form Container -->
+        <div class="edit-form-scroll-wrap">
+          <div class="edit-form-content">
         
-        <!-- Left Column: General Information -->
-        <div class="form-column">
-          <div class="card-section">
-            <div class="section-header">
-              <div class="section-icon-box bg-emerald-light">
-                <app-icon name="food" [size]="20" extraClass="text-emerald"></app-icon>
-              </div>
-              <div>
-                <h3 class="section-title">Información General</h3>
-                <p class="section-desc">Detalles básicos del plato o receta</p>
-              </div>
-            </div>
-
-            <!-- Dish Name -->
-            <div class="form-group">
-              <label class="form-label" for="dish-name-input">
-                Nombre del Plato <span class="required">*</span>
-              </label>
-              <div class="input-container">
-                <input
-                  id="dish-name-input"
-                  type="text"
-                  class="form-input text-lg"
-                  [(ngModel)]="dishName"
-                  placeholder="Ej: Pollo al Horno con Papas, Caraotas Negras, Arepa Reina Pepiada..."
-                  autofocus
-                />
-                <button *ngIf="dishName" class="btn-clear-input" (click)="dishName = ''" title="Limpiar">✕</button>
-              </div>
-            </div>
-
-            <!-- Dish Type Selector (Interactive Cards/Chips) -->
-            <div class="form-group">
-              <label class="form-label">Tipo de Plato / Categoría de Menú</label>
-              <div class="dish-type-grid">
-                
-                <div
-                  class="type-card"
-                  [class.selected]="dishType === 'protein'"
-                  (click)="dishType = 'protein'"
-                >
-                  <div class="type-badge badge-rose">Almuerzo</div>
-                  <span class="type-title">Proteína Principal</span>
-                  <span class="type-desc">Pollo, Carne, Pescado, Cerdo, etc.</span>
-                </div>
-
-                <div
-                  class="type-card"
-                  [class.selected]="dishType === 'side'"
-                  (click)="dishType = 'side'"
-                >
-                  <div class="type-badge badge-emerald">Almuerzo</div>
-                  <span class="type-title">Contorno / Acompañante</span>
-                  <span class="type-desc">Arroz, Ensalada, Tajadas, Puré, etc.</span>
-                </div>
-
-                <div
-                  class="type-card"
-                  [class.selected]="dishType === 'breakfast'"
-                  (click)="dishType = 'breakfast'"
-                >
-                  <div class="type-badge badge-amber">Mañana</div>
-                  <span class="type-title">Desayuno</span>
-                  <span class="type-desc">Arepas, Huevos, Pancakes, etc.</span>
-                </div>
-
-                <div
-                  class="type-card"
-                  [class.selected]="dishType === 'dinner'"
-                  (click)="dishType = 'dinner'"
-                >
-                  <div class="type-badge badge-blue">Noche</div>
-                  <span class="type-title">Cena</span>
-                  <span class="type-desc">Sándwich, Crema, Tacos, Ligero, etc.</span>
-                </div>
-
-              </div>
-            </div>
-
-            <!-- Recipe URL with Test Action -->
-            <div class="form-group">
-              <div class="label-with-action">
-                <label class="form-label" for="recipe-url-input">
-                  Enlace de Receta (Instagram, YouTube, TikTok o Web)
-                </label>
-                <a
-                  *ngIf="recipeUrl && isValidUrl(recipeUrl)"
-                  [href]="recipeUrl"
-                  target="_blank"
-                  rel="noopener noreferrer"
-                  class="link-preview-action"
-                  title="Abrir receta en nueva pestaña"
-                >
-                  <app-icon name="external-link" [size]="14"></app-icon>
-                  <span>Probar / Abrir Enlace</span>
-                </a>
-              </div>
-              <div class="input-container">
-                <input
-                  id="recipe-url-input"
-                  type="url"
-                  class="form-input"
-                  [(ngModel)]="recipeUrl"
-                  placeholder="https://www.instagram.com/reel/... o https://youtube.com/watch?v=..."
-                />
-                <button *ngIf="recipeUrl" class="btn-clear-input" (click)="recipeUrl = ''" title="Limpiar">✕</button>
-              </div>
-              <p class="field-hint">
-                💡 Guarda el link del reel o video para ver los pasos de preparación en cualquier momento.
-              </p>
-            </div>
-
+        <!-- SECTION 1: Nombre del Plato -->
+        <div class="flat-section">
+          <label class="flat-label" for="dish-name-input">Nombre del Plato *</label>
+          <div class="input-wrap">
+            <input
+              id="dish-name-input"
+              type="text"
+              class="flat-input font-bold"
+              [(ngModel)]="dishName"
+              placeholder="Ej: Pollo al Horno con Papas..."
+              autofocus
+            />
+            <button *ngIf="dishName" type="button" class="btn-clear" (click)="dishName = ''">✕</button>
           </div>
         </div>
 
-        <!-- Right Column: Ingredients Management -->
-        <div class="form-column">
-          <div class="card-section">
-            <div class="section-header">
-              <div class="section-icon-box bg-blue-light">
-                <app-icon name="shopping-cart" [size]="20" extraClass="text-blue"></app-icon>
-              </div>
-              <div class="header-text-with-badge">
-                <div>
-                  <h3 class="section-title">Ingredientes de la Receta</h3>
-                  <p class="section-desc">Ingredientes necesarios para preparar este plato</p>
+        <!-- SECTION 2: Tipo de Plato (Segmented Chips Control) -->
+        <!-- SECTION 2: Categorías del Plato (Multi-select Toggle Chips) -->
+        <div class="flat-section">
+          <label class="flat-label">Categorías del Plato (puedes marcar varias)</label>
+          <div class="type-segmented-bar">
+            <button
+              type="button"
+              class="type-segment"
+              [class.active]="hasType('protein')"
+              (click)="toggleType('protein')"
+            >
+              🥩 Principal
+            </button>
+
+            <button
+              type="button"
+              class="type-segment"
+              [class.active]="hasType('side')"
+              (click)="toggleType('side')"
+            >
+              🥗 Contorno
+            </button>
+
+            <button
+              type="button"
+              class="type-segment"
+              [class.active]="hasType('breakfast')"
+              (click)="toggleType('breakfast')"
+            >
+              🍳 Desayuno
+            </button>
+
+            <button
+              type="button"
+              class="type-segment"
+              [class.active]="hasType('dinner')"
+              (click)="toggleType('dinner')"
+            >
+              🥪 Cena
+            </button>
+          </div>
+        </div>
+
+        <!-- SECTION 3: Enlace de Receta -->
+        <div class="flat-section">
+          <div class="label-row">
+            <label class="flat-label" for="recipe-url-input">Enlace de Receta (opcional)</label>
+            <a
+              *ngIf="recipeUrl && isValidUrl(recipeUrl)"
+              [href]="recipeUrl"
+              target="_blank"
+              rel="noopener noreferrer"
+              class="flat-link-action"
+            >
+              <app-icon name="external-link" [size]="13"></app-icon>
+              <span>Abrir Enlace</span>
+            </a>
+          </div>
+          <div class="input-wrap">
+            <input
+              id="recipe-url-input"
+              type="url"
+              class="flat-input"
+              [(ngModel)]="recipeUrl"
+              placeholder="https://www.instagram.com/reel/... o https://youtube.com/..."
+            />
+            <button *ngIf="recipeUrl" type="button" class="btn-clear" (click)="recipeUrl = ''">✕</button>
+          </div>
+        </div>
+
+        <!-- SECTION 4: Ingredientes de la Receta -->
+        <div class="flat-section ings-section">
+          <div class="label-row">
+            <label class="flat-label">Ingredientes de la Receta</label>
+            <span class="ing-count-badge">{{ assignedIngredients.length }} ingredientes</span>
+          </div>
+
+          <!-- Quick Add Bar for Ingredients -->
+          <div class="quick-add-ing-bar">
+            <div class="ing-input-wrap">
+              <input
+                type="text"
+                class="flat-input"
+                [(ngModel)]="newIngName"
+                (input)="filterSuggestions()"
+                (keydown.escape)="showSuggestions = false"
+                (keydown.enter)="$event.preventDefault(); addIngredientFromInput()"
+                placeholder="Escribe ingrediente (ej. Pollo, Cebolla, Sal)..."
+              />
+              
+              <!-- Suggestions Dropdown -->
+              <div *ngIf="showSuggestions && suggestions.length > 0" class="suggestions-popup">
+                <div class="suggestions-header">
+                  <span>Sugerencias:</span>
+                  <button type="button" class="btn-close-sugg" (click)="showSuggestions = false">✕</button>
                 </div>
-                <span class="badge badge-emerald count-badge">{{ assignedIngredients.length }} ingredientes</span>
+                <div
+                  *ngFor="let s of suggestions"
+                  class="suggestion-item"
+                  (click)="selectSuggestion(s)"
+                >
+                  <span class="suggestion-name">{{ s.name }}</span>
+                  <span class="cat-chip" [style.background-color]="getCatColor(s.categoryId) + '20'" [style.color]="getCatColor(s.categoryId)">
+                    {{ getCatName(s.categoryId) }}
+                  </span>
+                </div>
               </div>
             </div>
 
-            <!-- Add Ingredient Box -->
-            <div class="add-ingredient-box">
-              <span class="box-subtitle">Añadir Ingrediente:</span>
-              
-              <div class="add-input-row">
-                <!-- Search / Input with Suggestions Dropdown -->
-                <div class="ing-input-wrapper">
-                  <input
-                    type="text"
-                    class="form-input"
-                    [(ngModel)]="newIngName"
-                    (input)="filterSuggestions()"
-                    (keydown.enter)="$event.preventDefault(); addIngredientFromInput()"
-                    placeholder="Escribe un ingrediente (ej. Pollo, Cebolla, Papas)..."
-                  />
-                  
-                  <!-- Suggestions Dropdown -->
-                  <div *ngIf="showSuggestions && suggestions.length > 0" class="suggestions-popup">
-                    <div class="suggestions-header">Sugerencias existentes:</div>
-                    <div
-                      *ngFor="let s of suggestions"
-                      class="suggestion-item"
-                      (click)="selectSuggestion(s)"
-                    >
-                      <div class="suggestion-info">
-                        <span class="suggestion-name">{{ s.name }}</span>
-                        <span class="cat-chip" [style.background-color]="getCatColor(s.categoryId) + '20'" [style.color]="getCatColor(s.categoryId)">
-                          {{ getCatName(s.categoryId) }}
-                        </span>
-                      </div>
-                      <span class="suggestion-add-hint">+ Agregar</span>
-                    </div>
-                  </div>
-                </div>
+            <div class="cat-select-and-btn-row">
+              <select
+                class="flat-select flex-1"
+                [(ngModel)]="newIngCategory"
+                title="Categoría"
+              >
+                <option *ngFor="let c of categories()" [value]="c.id">{{ c.name }}</option>
+              </select>
 
-                <!-- Category Selector for new items -->
-                <div class="cat-select-wrapper">
-                  <select
-                    class="form-input select-category"
-                    [(ngModel)]="newIngCategory"
-                    title="Categoría para la lista de compras"
+              <button
+                type="button"
+                class="btn-add-ing-action"
+                (click)="addIngredientFromInput()"
+                [disabled]="!newIngName.trim()"
+              >
+                <app-icon name="plus" [size]="15"></app-icon>
+                <span>Añadir</span>
+              </button>
+            </div>
+          </div>
+
+          <!-- Assigned Ingredients List -->
+          <div class="assigned-ings-header-row" *ngIf="assignedIngredients.length > 1">
+            <span class="assigned-header-title">Ingredientes del plato ({{ assignedIngredients.length }})</span>
+            <div class="sort-mini-bar">
+              <span class="sort-mini-label">Ordenar:</span>
+              <button
+                type="button"
+                class="btn-sort-mini"
+                (click)="sortAssignedIngredients('asc')"
+                title="Ordenar ingredientes de la A a la Z"
+              >
+                A - Z
+              </button>
+              <button
+                type="button"
+                class="btn-sort-mini"
+                (click)="sortAssignedIngredients('desc')"
+                title="Ordenar ingredientes de la Z a la A"
+              >
+                Z - A
+              </button>
+            </div>
+          </div>
+
+          <div class="assigned-ings-list">
+            <div *ngIf="assignedIngredients.length === 0" class="empty-ings-note">
+              <span>No hay ingredientes asignados a este plato.</span>
+            </div>
+
+            <div
+              *ngFor="let ing of assignedIngredients; let i = index"
+              class="assigned-ing-row"
+            >
+              <div class="assigned-ing-top-line">
+                <span class="assigned-ing-name">• {{ ing.name }}</span>
+                <div class="assigned-ing-actions">
+                  <button
+                    type="button"
+                    class="btn-remove-ing"
+                    (click)="removeIngredientFromDish(i)"
+                    title="Quitar de este plato"
                   >
-                    <option *ngFor="let c of categories()" [value]="c.id">{{ c.name }}</option>
-                  </select>
+                    Quitar
+                  </button>
+                  <button
+                    type="button"
+                    class="btn-del-db"
+                    (click)="confirmDeleteFromDb(ing.id, ing.name)"
+                    title="Eliminar de BD"
+                  >
+                    <app-icon name="trash" [size]="13"></app-icon>
+                  </button>
                 </div>
+              </div>
 
-                <button
-                  class="btn-add-ingredient"
-                  (click)="addIngredientFromInput()"
-                  [disabled]="!newIngName.trim()"
-                  title="Añadir a la receta"
+              <div class="assigned-ing-bottom-line">
+                <select
+                  class="select-ing-cat"
+                  [ngModel]="ing.categoryId"
+                  (ngModelChange)="updateIngredientCategory(ing, $event)"
+                  title="Categoría para la lista de compras"
                 >
-                  <app-icon name="plus" [size]="16"></app-icon>
-                  <span>Añadir</span>
-                </button>
+                  <option *ngFor="let c of categories()" [value]="c.id">{{ c.name }}</option>
+                </select>
               </div>
-
             </div>
-
-            <!-- List of Assigned Ingredients -->
-            <div class="assigned-ingredients-container">
-              
-              <div *ngIf="assignedIngredients.length === 0" class="empty-state-card">
-                <div class="empty-icon-wrap">
-                  <app-icon name="tag" [size]="28" extraClass="text-light"></app-icon>
-                </div>
-                <h4>Sin ingredientes asignados</h4>
-                <p>Usa la barra de arriba para añadir los ingredientes necesarios para este plato. Al planificar tu menú, se enviarán automáticamente a tu lista de compras.</p>
-              </div>
-
-              <div *ngIf="assignedIngredients.length > 0" class="ingredients-list">
-                <div
-                  *ngFor="let ing of assignedIngredients; let i = index"
-                  class="ingredient-item-row"
-                >
-                  <div class="ing-left">
-                    <span class="ing-number">{{ i + 1 }}</span>
-                    <span class="cat-pill" [style.background-color]="getCatColor(ing.categoryId) + '20'" [style.color]="getCatColor(ing.categoryId)">
-                      {{ getCatName(ing.categoryId) }}
-                    </span>
-                    <span class="ing-name-text">{{ ing.name }}</span>
-                  </div>
-
-                  <div class="ing-right-actions">
-                    <!-- Remove from recipe button -->
-                    <button
-                      class="btn-action-icon btn-remove-from-recipe"
-                      (click)="removeIngredientFromDish(i)"
-                      title="Quitar de este plato"
-                    >
-                      <app-icon name="x" [size]="16"></app-icon>
-                      <span class="btn-tooltip">Quitar</span>
-                    </button>
-
-                    <!-- Delete definitively from DB button -->
-                    <button
-                      class="btn-action-icon btn-delete-definitive"
-                      (click)="confirmDeleteFromDb(ing.id, ing.name)"
-                      title="Eliminar de toda la base de datos"
-                    >
-                      <app-icon name="trash" [size]="15"></app-icon>
-                      <span class="btn-tooltip">Borrar de BD</span>
-                    </button>
-                  </div>
-                </div>
-              </div>
-
-            </div>
-
           </div>
+
+        </div>
+
+        <!-- SECTION 5: In-flow Bottom Actions Row (Does not float or cover content) -->
+        <div class="bottom-actions-row">
+          <button type="button" class="btn-cancel-bottom" (click)="onCancel()">Cancelar</button>
+          <button type="button" class="btn-save-bottom" (click)="onSaveDish()" [disabled]="!dishName.trim()">
+            <app-icon name="check" [size]="16"></app-icon>
+            <span>Guardar Plato</span>
+          </button>
         </div>
 
       </div>
-
-      <!-- Bottom floating save bar for mobile -->
-      <div class="mobile-save-bar">
-        <button class="btn-cancel-mobile" (click)="onCancel()">Cancelar</button>
-        <button class="btn-save-mobile" (click)="onSaveDish()" [disabled]="!dishName.trim()">
-          <app-icon name="check" [size]="18"></app-icon>
-          <span>Guardar Plato</span>
-        </button>
-      </div>
-
     </div>
+
+  </div>
+</div>
   `,
   styles: [`
-    .dish-edit-page {
+    .dish-sheet-overlay {
+      position: fixed;
+      top: 0;
+      left: 0;
+      right: 0;
+      bottom: 0;
+      width: 100vw;
+      height: 100vh;
+      height: 100dvh;
+      background: rgba(15, 23, 42, 0.45);
+      backdrop-filter: blur(2px);
+      z-index: 9999;
       display: flex;
-      flex-direction: column;
-      gap: 20px;
-      padding-bottom: 30px;
+      align-items: flex-end;
+      justify-content: center;
+      margin: 0;
+      padding: 0;
+      animation: fadeInOverlay 0.2s ease-out;
     }
 
-    /* Top Bar */
-    .top-bar {
-      background: #ffffff;
-      padding: 18px 24px;
-      border-radius: 16px;
-      border: 1px solid var(--border-color);
-      box-shadow: var(--shadow-sm);
-      display: flex;
-      align-items: center;
-      justify-content: space-between;
-      flex-wrap: wrap;
-      gap: 16px;
+    @keyframes fadeInOverlay {
+      from { opacity: 0; }
+      to { opacity: 1; }
     }
 
-    .top-bar-left {
-      display: flex;
-      flex-direction: column;
-      gap: 8px;
-    }
-
-    .btn-back {
-      display: inline-flex;
-      align-items: center;
-      gap: 6px;
-      font-size: 0.88rem;
-      font-weight: 600;
-      color: var(--primary-600);
-      padding: 4px 8px;
-      border-radius: 8px;
-      margin-left: -8px;
-      align-self: flex-start;
-    }
-    .btn-back:hover {
-      background: var(--primary-50);
-      color: var(--primary-700);
-    }
-
-    .page-title {
-      font-size: 1.4rem;
-      font-weight: 800;
-      color: #0f172a;
-    }
-
-    .page-subtitle {
-      font-size: 0.88rem;
-      color: var(--text-muted);
-      margin-top: 2px;
-    }
-
-    .top-bar-actions {
-      display: flex;
-      align-items: center;
-      gap: 10px;
-    }
-
-    .btn-delete {
-      display: flex;
-      align-items: center;
-      gap: 6px;
-      padding: 9px 16px;
-      border-radius: 10px;
-      font-size: 0.88rem;
-      font-weight: 600;
-      color: #dc2626;
-      background: #fee2e2;
-      border: 1px solid #fca5a5;
-    }
-    .btn-delete:hover {
-      background: #fecaca;
-    }
-
-    .btn-cancel {
-      padding: 9px 18px;
-      border-radius: 10px;
-      font-size: 0.88rem;
-      font-weight: 600;
-      color: #475569;
-      background: #f1f5f9;
-      border: 1px solid var(--border-color);
-    }
-    .btn-cancel:hover {
-      background: #e2e8f0;
-      color: #0f172a;
-    }
-
-    .btn-save {
-      display: flex;
-      align-items: center;
-      gap: 6px;
-      padding: 9px 22px;
-      border-radius: 10px;
-      font-size: 0.92rem;
-      font-weight: 700;
-      color: #ffffff;
-      background: var(--primary-500);
-      box-shadow: 0 4px 6px -1px rgba(16, 185, 129, 0.25);
-    }
-    .btn-save:hover:not(:disabled) {
-      background: var(--primary-600);
-    }
-    .btn-save:disabled {
-      opacity: 0.5;
-      cursor: not-allowed;
-    }
-
-    /* Grid Layout */
-    .form-layout-grid {
-      display: grid;
-      grid-template-columns: 1fr 1fr;
-      gap: 20px;
-      align-items: start;
-    }
-
-    @media (max-width: 900px) {
-      .form-layout-grid {
-        grid-template-columns: 1fr;
-      }
-    }
-
-    /* Card Section */
-    .card-section {
-      background: #ffffff;
-      border-radius: 16px;
-      border: 1px solid var(--border-color);
-      box-shadow: var(--shadow-sm);
-      padding: 24px;
-      display: flex;
-      flex-direction: column;
-      gap: 20px;
-    }
-
-    .section-header {
-      display: flex;
-      align-items: center;
-      gap: 14px;
-      padding-bottom: 14px;
-      border-bottom: 1px solid var(--border-color);
-    }
-
-    .header-text-with-badge {
-      display: flex;
-      align-items: center;
-      justify-content: space-between;
+    .dish-sheet-container {
       width: 100%;
+      max-width: 640px;
+      max-height: 90vh;
+      max-height: 90dvh;
+      background: #ffffff;
+      border-radius: 18px 18px 0 0;
+      display: flex;
+      flex-direction: column;
+      overflow: hidden;
+      box-shadow: 0 -10px 30px rgba(0, 0, 0, 0.25);
+      animation: slideUpSheet 0.25s cubic-bezier(0.16, 1, 0.3, 1) forwards;
+      touch-action: pan-y;
+      transition: transform 0.08s ease-out;
     }
 
-    .section-icon-box {
-      width: 44px;
-      height: 44px;
-      border-radius: 12px;
+    @keyframes slideUpSheet {
+      from { transform: translateY(100%); }
+      to { transform: translateY(0); }
+    }
+
+    .sheet-handle-bar {
       display: flex;
       align-items: center;
       justify-content: center;
-      flex-shrink: 0;
-    }
-    .bg-emerald-light { background: #d1fae5; }
-    .bg-blue-light { background: #dbeafe; }
-    .text-emerald { color: #059669; }
-    .text-blue { color: #2563eb; }
-
-    .section-title {
-      font-size: 1.15rem;
-      font-weight: 700;
-      color: #0f172a;
+      padding: 10px 0 6px;
+      cursor: grab;
+      touch-action: none;
+      background: #ffffff;
     }
 
-    .section-desc {
-      font-size: 0.82rem;
-      color: var(--text-muted);
+    .handle-pill {
+      width: 38px;
+      height: 4px;
+      background: #cbd5e1;
+      border-radius: 9999px;
     }
 
-    .count-badge {
-      font-size: 0.8rem;
-      padding: 4px 10px;
+    .edit-form-scroll-wrap {
+      overflow-y: auto;
+      flex: 1;
+      max-height: calc(90dvh - 110px);
+      -webkit-overflow-scrolling: touch;
+      padding-bottom: 20px;
     }
 
-    /* Form controls */
-    .form-group {
+    .edit-header-bar {
       display: flex;
       flex-direction: column;
-      gap: 8px;
+      padding: 6px 14px 10px;
+      border-bottom: 1px solid var(--border-color);
+      background: #ffffff;
+      gap: 10px;
+      width: 100%;
+      box-sizing: border-box;
     }
 
-    .form-label {
-      font-size: 0.9rem;
+    .header-nav-row {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      width: 100%;
+    }
+
+    .btn-back-flat {
+      display: inline-flex;
+      align-items: center;
+      justify-content: center;
+      gap: 4px;
+      font-size: 0.88rem;
+      font-weight: 600;
+      color: #059669;
+      background: transparent;
+      border: none;
+      padding: 4px 8px;
+      border-radius: 6px;
+      cursor: pointer;
+      line-height: 1;
+    }
+    .btn-back-flat:hover {
+      background: #ecfdf5;
+    }
+    .btn-back-flat app-icon {
+      display: inline-flex;
+      align-items: center;
+      justify-content: center;
+    }
+
+    .edit-header-title h2 {
+      font-size: 1.05rem;
       font-weight: 700;
-      color: #334155;
+      color: #0f172a;
+      margin: 0;
     }
 
-    .required {
-      color: #dc2626;
+    .edit-header-actions {
+      display: flex;
+      align-items: center;
+      gap: 8px;
+      width: 100%;
     }
 
-    .label-with-action {
+    .btn-head-del {
+      display: inline-flex;
+      align-items: center;
+      gap: 4px;
+      color: #ef4444;
+      background: #fee2e2;
+      border: none;
+      padding: 8px 10px;
+      border-radius: 6px;
+      font-size: 0.82rem;
+      font-weight: 600;
+      cursor: pointer;
+    }
+    .btn-head-del:hover { background: #fecaca; }
+
+    .btn-head-cancel {
+      flex: 1;
+      font-size: 0.84rem;
+      font-weight: 600;
+      color: #64748b;
+      background: #f1f5f9;
+      border: 1px solid #e2e8f0;
+      padding: 8px 12px;
+      border-radius: 6px;
+      cursor: pointer;
+      text-align: center;
+    }
+    .btn-head-cancel:hover { background: #e2e8f0; color: #0f172a; }
+
+    .btn-head-save {
+      flex: 2;
+      display: inline-flex;
+      align-items: center;
+      justify-content: center;
+      gap: 6px;
+      font-size: 0.86rem;
+      font-weight: 700;
+      color: #ffffff;
+      background: #10b981;
+      border: none;
+      padding: 8px 14px;
+      border-radius: 6px;
+      cursor: pointer;
+    }
+    .btn-head-save:hover:not(:disabled) { background: #059669; }
+    .btn-head-save:disabled { opacity: 0.5; cursor: not-allowed; }
+
+    /* Form Content */
+    .edit-form-content {
+      display: flex;
+      flex-direction: column;
+      width: 100%;
+    }
+
+    .flat-section {
+      padding: 12px 14px;
+      border-bottom: 1px solid #f1f5f9;
+      display: flex;
+      flex-direction: column;
+      gap: 6px;
+    }
+
+    .flat-label {
+      font-size: 0.82rem;
+      font-weight: 700;
+      color: #475569;
+    }
+
+    .label-row {
       display: flex;
       align-items: center;
       justify-content: space-between;
     }
 
-    .link-preview-action {
+    .flat-link-action {
+      display: inline-flex;
+      align-items: center;
+      gap: 3px;
+      font-size: 0.78rem;
+      font-weight: 600;
+      color: #059669;
+      text-decoration: none;
+    }
+    .flat-link-action:hover { text-decoration: underline; }
+
+    .input-wrap {
+      position: relative;
+      display: flex;
+      align-items: center;
+      width: 100%;
+    }
+
+    .flat-input {
+      width: 100%;
+      padding: 8px 10px;
+      border: 1px solid #cbd5e1;
+      border-radius: 6px;
+      font-size: 0.9rem;
+      color: #0f172a;
+      outline: none;
+      box-sizing: border-box;
+      background: #ffffff;
+    }
+    .flat-input:focus {
+      border-color: #10b981;
+    }
+    .flat-input.font-bold {
+      font-weight: 600;
+    }
+
+    .btn-clear {
+      position: absolute;
+      right: 8px;
+      background: transparent;
+      border: none;
+      color: #94a3b8;
+      font-size: 0.8rem;
+      cursor: pointer;
+      padding: 2px 4px;
+    }
+
+    /* Type Segmented Bar */
+    .type-segmented-bar {
+      display: grid;
+      grid-template-columns: repeat(4, 1fr);
+      gap: 6px;
+      width: 100%;
+    }
+
+    @media (max-width: 600px) {
+      .type-segmented-bar {
+        grid-template-columns: 1fr 1fr;
+      }
+    }
+
+    .type-segment {
+      padding: 8px 6px;
+      font-size: 0.8rem;
+      font-weight: 600;
+      color: #475569;
+      background: #f8fafc;
+      border: 1px solid #e2e8f0;
+      border-radius: 6px;
+      cursor: pointer;
+      text-align: center;
+      transition: all 0.12s;
+      white-space: nowrap;
+      overflow: hidden;
+      text-overflow: ellipsis;
+    }
+    .type-segment:hover {
+      background: #ffffff;
+      border-color: #cbd5e1;
+    }
+    .type-segment.active {
+      background: #ecfdf5;
+      color: #065f46;
+      border-color: #10b981;
+      font-weight: 700;
+    }
+
+    /* Ingredients Section */
+    .ing-count-badge {
+      font-size: 0.72rem;
+      font-weight: 600;
+      color: #059669;
+      background: #ecfdf5;
+      padding: 2px 6px;
+      border-radius: 4px;
+    }
+
+    .quick-add-ing-bar {
+      display: flex;
+      flex-direction: column;
+      gap: 6px;
+      background: #f8fafc;
+      padding: 8px;
+      border-radius: 6px;
+      border: 1px solid #e2e8f0;
+    }
+
+    .ing-input-wrap {
+      position: relative;
+      width: 100%;
+    }
+
+    .cat-select-and-btn-row {
+      display: flex;
+      gap: 6px;
+      width: 100%;
+    }
+
+    .flat-select {
+      padding: 7px 8px;
+      border: 1px solid #cbd5e1;
+      border-radius: 6px;
+      font-size: 0.82rem;
+      color: #334155;
+      background: #ffffff;
+      outline: none;
+      box-sizing: border-box;
+    }
+    .flat-select:focus { border-color: #10b981; }
+
+    .flex-1 { flex: 1; min-width: 0; }
+
+    .btn-add-ing-action {
       display: inline-flex;
       align-items: center;
       gap: 4px;
-      font-size: 0.82rem;
-      font-weight: 600;
-      color: var(--primary-600);
-      text-decoration: none;
-    }
-    .link-preview-action:hover {
-      text-decoration: underline;
-    }
-
-    .input-container {
-      position: relative;
-      display: flex;
-      align-items: center;
-    }
-
-    .form-input {
-      width: 100%;
-      padding: 10px 14px;
-      border-radius: 10px;
-      border: 1.5px solid #cbd5e1;
-      font-size: 0.95rem;
-      color: #0f172a;
-      outline: none;
-      transition: all 0.2s;
-      background: #ffffff;
-    }
-    .form-input:focus {
-      border-color: var(--primary-500);
-      box-shadow: 0 0 0 3px rgba(16, 185, 129, 0.15);
-    }
-
-    .text-lg {
-      font-size: 1.05rem;
-      font-weight: 600;
-      padding: 12px 16px;
-    }
-
-    .btn-clear-input {
-      position: absolute;
-      right: 12px;
-      color: #94a3b8;
-      font-size: 0.85rem;
-      padding: 4px 8px;
-      border-radius: 6px;
-    }
-    .btn-clear-input:hover {
-      color: #0f172a;
-      background: #f1f5f9;
-    }
-
-    .field-hint {
-      font-size: 0.8rem;
-      color: #64748b;
-      margin-top: 2px;
-    }
-
-    /* Dish Type Cards Grid */
-    .dish-type-grid {
-      display: grid;
-      grid-template-columns: 1fr 1fr;
-      gap: 10px;
-    }
-
-    .type-card {
-      border: 2px solid #e2e8f0;
-      border-radius: 12px;
-      padding: 12px 14px;
-      cursor: pointer;
-      display: flex;
-      flex-direction: column;
-      gap: 4px;
-      transition: all 0.2s ease;
-      background: #f8fafc;
-    }
-    .type-card:hover {
-      border-color: #cbd5e1;
-      background: #ffffff;
-    }
-    .type-card.selected {
-      border-color: var(--primary-500);
-      background: #ecfdf5;
-      box-shadow: 0 0 0 1px var(--primary-500);
-    }
-
-    .type-badge {
-      align-self: flex-start;
-      font-size: 0.72rem;
-      padding: 2px 6px;
-      border-radius: 6px;
-      font-weight: 700;
-    }
-
-    .type-title {
-      font-size: 0.92rem;
-      font-weight: 700;
-      color: #1e293b;
-    }
-
-    .type-desc {
-      font-size: 0.75rem;
-      color: #64748b;
-      line-height: 1.2;
-    }
-
-    /* Add Ingredient Box */
-    .add-ingredient-box {
-      background: #f8fafc;
-      border: 1px solid var(--border-color);
-      border-radius: 12px;
-      padding: 14px;
-      display: flex;
-      flex-direction: column;
-      gap: 10px;
-    }
-
-    .box-subtitle {
-      font-size: 0.82rem;
-      font-weight: 700;
-      color: #475569;
-      text-transform: uppercase;
-      letter-spacing: 0.5px;
-    }
-
-    .add-input-row {
-      display: flex;
-      gap: 8px;
-      position: relative;
-    }
-
-    .ing-input-wrapper {
-      position: relative;
-      flex: 1;
-    }
-
-    .cat-select-wrapper {
-      width: 140px;
-    }
-
-    .select-category {
-      padding: 10px 8px;
-      font-size: 0.85rem;
-      cursor: pointer;
-    }
-
-    .btn-add-ingredient {
-      display: flex;
-      align-items: center;
-      gap: 6px;
-      padding: 10px 16px;
-      border-radius: 10px;
-      background: var(--primary-500);
+      padding: 7px 12px;
+      background: #10b981;
       color: #ffffff;
+      border: none;
+      border-radius: 6px;
+      font-size: 0.82rem;
       font-weight: 700;
-      font-size: 0.88rem;
+      cursor: pointer;
       white-space: nowrap;
     }
-    .btn-add-ingredient:hover:not(:disabled) {
-      background: var(--primary-600);
-    }
-    .btn-add-ingredient:disabled {
-      opacity: 0.5;
-      cursor: not-allowed;
-    }
+    .btn-add-ing-action:hover:not(:disabled) { background: #059669; }
+    .btn-add-ing-action:disabled { opacity: 0.5; cursor: not-allowed; }
 
     /* Suggestions Popup */
     .suggestions-popup {
@@ -685,245 +651,233 @@ import { IconComponent } from './icon.component';
       right: 0;
       background: #ffffff;
       border: 1px solid #cbd5e1;
-      border-radius: 10px;
-      box-shadow: var(--shadow-lg);
-      margin-top: 4px;
-      max-height: 220px;
+      border-radius: 6px;
+      margin-top: 2px;
+      max-height: 180px;
       overflow-y: auto;
       z-index: 100;
+      box-shadow: 0 4px 6px -1px rgb(0 0 0 / 0.1);
     }
 
     .suggestions-header {
-      padding: 6px 12px;
-      font-size: 0.72rem;
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      padding: 4px 8px;
+      font-size: 0.7rem;
       font-weight: 700;
       color: #64748b;
       background: #f1f5f9;
-      text-transform: uppercase;
+    }
+
+    .btn-close-sugg {
+      background: transparent;
+      border: none;
+      color: #ef4444;
+      font-size: 0.72rem;
+      cursor: pointer;
     }
 
     .suggestion-item {
-      padding: 8px 12px;
+      padding: 6px 8px;
       display: flex;
       align-items: center;
       justify-content: space-between;
       cursor: pointer;
       border-bottom: 1px solid #f8fafc;
+      font-size: 0.84rem;
     }
-    .suggestion-item:hover {
-      background: #ecfdf5;
-    }
-
-    .suggestion-info {
-      display: flex;
-      align-items: center;
-      gap: 8px;
-    }
-
-    .suggestion-name {
-      font-weight: 600;
-      color: #0f172a;
-      font-size: 0.9rem;
-    }
+    .suggestion-item:hover { background: #ecfdf5; }
 
     .cat-chip {
-      font-size: 0.72rem;
+      font-size: 0.68rem;
       font-weight: 700;
-      padding: 2px 6px;
-      border-radius: 4px;
+      padding: 1px 5px;
+      border-radius: 3px;
     }
 
-    .suggestion-add-hint {
-      font-size: 0.78rem;
-      font-weight: 600;
-      color: var(--primary-600);
-    }
-
-    /* Assigned Ingredients List */
-    .assigned-ingredients-container {
-      display: flex;
-      flex-direction: column;
-      gap: 8px;
-    }
-
-    .empty-state-card {
-      text-align: center;
-      padding: 32px 16px;
-      background: #f8fafc;
-      border: 1.5px dashed #cbd5e1;
-      border-radius: 12px;
-      display: flex;
-      flex-direction: column;
-      align-items: center;
-      gap: 8px;
-    }
-
-    .empty-icon-wrap {
-      width: 48px;
-      height: 48px;
-      border-radius: 50%;
-      background: #e2e8f0;
-      display: flex;
-      align-items: center;
-      justify-content: center;
-      margin-bottom: 4px;
-    }
-
-    .empty-state-card h4 {
-      font-size: 0.95rem;
-      font-weight: 700;
-      color: #334155;
-    }
-
-    .empty-state-card p {
-      font-size: 0.82rem;
-      color: #64748b;
-      max-width: 320px;
-    }
-
-    .ingredients-list {
-      display: flex;
-      flex-direction: column;
-      gap: 6px;
-      max-height: 420px;
-      overflow-y: auto;
-      padding-right: 4px;
-    }
-
-    .ingredient-item-row {
+    /* Assigned Ingredients */
+    .assigned-ings-header-row {
       display: flex;
       align-items: center;
       justify-content: space-between;
-      padding: 10px 14px;
-      background: #ffffff;
-      border: 1px solid var(--border-color);
-      border-radius: 10px;
-      gap: 10px;
-      transition: all 0.15s ease;
-    }
-    .ingredient-item-row:hover {
-      border-color: #cbd5e1;
-      box-shadow: var(--shadow-sm);
+      margin-top: 10px;
+      margin-bottom: 4px;
+      padding-bottom: 4px;
+      border-bottom: 1px solid #e2e8f0;
     }
 
-    .ing-left {
-      display: flex;
-      align-items: center;
-      gap: 10px;
-      flex: 1;
-      min-width: 0;
-    }
-
-    .ing-number {
+    .assigned-header-title {
       font-size: 0.78rem;
       font-weight: 700;
-      color: #94a3b8;
-      width: 18px;
-    }
-
-    .cat-pill {
-      font-size: 0.75rem;
-      font-weight: 700;
-      padding: 3px 8px;
-      border-radius: 6px;
-      white-space: nowrap;
-    }
-
-    .ing-name-text {
-      font-size: 0.92rem;
-      font-weight: 600;
-      color: #1e293b;
-      white-space: nowrap;
-      overflow: hidden;
-      text-overflow: ellipsis;
-    }
-
-    .ing-right-actions {
-      display: flex;
-      align-items: center;
-      gap: 6px;
-    }
-
-    .btn-action-icon {
-      padding: 6px;
-      border-radius: 8px;
-      display: flex;
-      align-items: center;
-      justify-content: center;
-      position: relative;
-    }
-
-    .btn-remove-from-recipe {
-      color: #64748b;
-      background: #f1f5f9;
-    }
-    .btn-remove-from-recipe:hover {
-      background: #e2e8f0;
-      color: #0f172a;
-    }
-
-    .btn-delete-definitive {
-      color: #dc2626;
-      background: #fee2e2;
-    }
-    .btn-delete-definitive:hover {
-      background: #fecaca;
-    }
-
-    .btn-tooltip {
-      display: none;
-    }
-
-    /* Mobile Save Bar */
-    .mobile-save-bar {
-      display: none;
-      position: fixed;
-      bottom: 60px;
-      left: 0;
-      right: 0;
-      background: #ffffff;
-      padding: 12px 16px;
-      box-shadow: 0 -4px 12px rgba(0, 0, 0, 0.1);
-      border-top: 1px solid var(--border-color);
-      z-index: 1000;
-      gap: 10px;
-    }
-
-    .btn-cancel-mobile {
-      flex: 1;
-      padding: 10px;
-      border-radius: 10px;
-      font-weight: 600;
-      background: #f1f5f9;
       color: #475569;
     }
 
-    .btn-save-mobile {
+    .sort-mini-bar {
+      display: flex;
+      align-items: center;
+      gap: 4px;
+    }
+
+    .sort-mini-label {
+      font-size: 0.72rem;
+      color: #94a3b8;
+      font-weight: 600;
+    }
+
+    .btn-sort-mini {
+      padding: 2px 7px;
+      border-radius: 4px;
+      font-size: 0.72rem;
+      font-weight: 700;
+      background: #f1f5f9;
+      color: #475569;
+      border: 1px solid #cbd5e1;
+      cursor: pointer;
+      transition: all 0.1s;
+    }
+    .btn-sort-mini:hover {
+      background: #ecfdf5;
+      color: #059669;
+      border-color: #a7f3d0;
+    }
+
+    .assigned-ings-list {
+      display: flex;
+      flex-direction: column;
+      margin-top: 4px;
+    }
+
+    .empty-ings-note {
+      padding: 14px;
+      text-align: center;
+      color: #94a3b8;
+      font-size: 0.82rem;
+    }
+
+    .assigned-ing-row {
+      display: flex;
+      flex-direction: column;
+      gap: 4px;
+      padding: 8px 0;
+      border-bottom: 1px solid #f1f5f9;
+    }
+
+    .assigned-ing-top-line {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      gap: 8px;
+    }
+
+    .assigned-ing-name {
+      font-size: 0.88rem;
+      font-weight: 600;
+      color: #0f172a;
+      white-space: normal;
+      word-break: break-word;
+    }
+
+    .assigned-ing-actions {
+      display: flex;
+      align-items: center;
+      gap: 4px;
+      flex-shrink: 0;
+    }
+
+    .btn-remove-ing {
+      background: #f1f5f9;
+      border: none;
+      color: #64748b;
+      font-size: 0.74rem;
+      font-weight: 600;
+      padding: 3px 7px;
+      border-radius: 4px;
+      cursor: pointer;
+    }
+    .btn-remove-ing:hover {
+      background: #fee2e2;
+      color: #dc2626;
+    }
+
+    .btn-del-db {
+      background: transparent;
+      border: none;
+      color: #cbd5e1;
+      padding: 3px 5px;
+      border-radius: 4px;
+      cursor: pointer;
+    }
+    .btn-del-db:hover {
+      color: #ef4444;
+      background: #fee2e2;
+    }
+
+    .assigned-ing-bottom-line {
+      width: 100%;
+    }
+
+    .select-ing-cat {
+      width: 100%;
+      padding: 4px 6px;
+      font-size: 0.75rem;
+      font-weight: 500;
+      color: #475569;
+      background: #f8fafc;
+      border: 1px solid #e2e8f0;
+      border-radius: 4px;
+      outline: none;
+      cursor: pointer;
+    }
+    .select-ing-cat:focus { border-color: #10b981; }
+
+    /* Bottom in-flow action buttons (No floating/overlapping) */
+    .bottom-actions-row {
+      display: flex;
+      gap: 10px;
+      padding: 14px 14px;
+      padding-bottom: max(16px, calc(10px + env(safe-area-inset-bottom, 0px)));
+      background: #ffffff;
+      border-top: 1px solid #e2e8f0;
+      align-items: center;
+    }
+
+    .btn-cancel-bottom {
+      flex: 1;
+      padding: 10px 14px;
+      border-radius: 6px;
+      font-weight: 600;
+      font-size: 0.88rem;
+      background: #ffffff;
+      color: #475569;
+      border: 1px solid #cbd5e1;
+      cursor: pointer;
+    }
+    .btn-cancel-bottom:hover {
+      background: #f1f5f9;
+    }
+
+    .btn-save-bottom {
       flex: 2;
       display: flex;
       align-items: center;
       justify-content: center;
       gap: 6px;
-      padding: 10px;
-      border-radius: 10px;
+      padding: 10px 18px;
+      border-radius: 6px;
       font-weight: 700;
-      background: var(--primary-500);
+      font-size: 0.9rem;
+      background: #10b981;
       color: #ffffff;
+      border: none;
+      cursor: pointer;
     }
-
-    @media (max-width: 768px) {
-      .mobile-save-bar {
-        display: flex;
-      }
-      .top-bar-actions {
-        display: none;
-      }
-      .add-input-row {
-        flex-direction: column;
-      }
-      .cat-select-wrapper {
-        width: 100%;
-      }
+    .btn-save-bottom:hover:not(:disabled) {
+      background: #059669;
+    }
+    .btn-save-bottom:disabled {
+      opacity: 0.5;
+      cursor: not-allowed;
     }
   `]
 })
@@ -934,16 +888,31 @@ export class DishEditComponent implements OnInit {
 
   private menuService = inject(MenuService);
   private firestoreService = inject(FirestoreService);
+  private elementRef = inject(ElementRef);
 
   isEditing = false;
   dishId?: string;
   dishName = '';
-  dishType: DishType = 'protein';
+  selectedTypes: DishType[] = ['protein'];
   recipeUrl = '';
-  
+
   assignedIngredients: Ingredient[] = [];
   categories = computed<Category[]>(() => this.firestoreService.categories());
   allDbIngredients = computed<Ingredient[]>(() => this.firestoreService.ingredients());
+
+  hasType(type: DishType): boolean {
+    return this.selectedTypes.includes(type);
+  }
+
+  toggleType(type: DishType): void {
+    if (this.selectedTypes.includes(type)) {
+      if (this.selectedTypes.length > 1) {
+        this.selectedTypes = this.selectedTypes.filter(t => t !== type);
+      }
+    } else {
+      this.selectedTypes = [...this.selectedTypes, type];
+    }
+  }
 
   // Add ingredient inputs
   newIngName = '';
@@ -951,12 +920,63 @@ export class DishEditComponent implements OnInit {
   showSuggestions = false;
   suggestions: Ingredient[] = [];
 
+  // Swipe / Drag down to dismiss state
+  private touchStartY = 0;
+  sheetTranslateY = 0;
+  isDragging = false;
+
+  onTouchStart(event: TouchEvent): void {
+    this.touchStartY = event.touches[0].clientY;
+    this.isDragging = true;
+  }
+
+  onTouchMove(event: TouchEvent): void {
+    if (!this.isDragging) return;
+    const currentY = event.touches[0].clientY;
+    const deltaY = currentY - this.touchStartY;
+    if (deltaY > 0) {
+      this.sheetTranslateY = deltaY;
+    }
+  }
+
+  onTouchEnd(): void {
+    if (!this.isDragging) return;
+    this.isDragging = false;
+    if (this.sheetTranslateY > 100) {
+      this.onCancel();
+    }
+    this.sheetTranslateY = 0;
+  }
+
+  onBackdropClick(event: MouseEvent): void {
+    if (event.target === event.currentTarget) {
+      this.onCancel();
+    }
+  }
+
+  @HostListener('document:click', ['$event'])
+  onDocumentClick(event: MouseEvent): void {
+    const target = event.target as HTMLElement;
+    if (!target) return;
+
+    const ingWrapper = this.elementRef.nativeElement.querySelector('.ing-input-wrapper');
+    if (ingWrapper && !ingWrapper.contains(target)) {
+      this.showSuggestions = false;
+    }
+  }
+
   async ngOnInit(): Promise<void> {
     if (this.dish) {
       this.isEditing = true;
       this.dishId = this.dish.id;
       this.dishName = this.dish.name || '';
-      this.dishType = this.dish.type || 'protein';
+      if (this.dish.types?.length) {
+        this.selectedTypes = [...this.dish.types];
+      } else if (this.dish.type) {
+        this.selectedTypes = [this.dish.type];
+      } else {
+        this.selectedTypes = ['protein'];
+      }
       this.recipeUrl = this.dish.recipeUrl || '';
 
       const allIngs = this.allDbIngredients();
@@ -974,14 +994,28 @@ export class DishEditComponent implements OnInit {
       return;
     }
 
-    const query = this.newIngName.toLowerCase().trim();
+    const query = this.newIngName.trim();
     const assignedIds = new Set(this.assignedIngredients.map(i => i.id));
 
     this.suggestions = this.allDbIngredients()
-      .filter(i => !assignedIds.has(i.id) && i.name.toLowerCase().includes(query))
+      .filter(i => !i.deletedAt && !assignedIds.has(i.id) && matchesSearch(i.name, query))
       .slice(0, 6);
 
     this.showSuggestions = this.suggestions.length > 0;
+
+    // Auto select category if exact match found
+    const exact = this.allDbIngredients().find(i => isSameText(i.name, query));
+    if (exact && exact.categoryId) {
+      this.newIngCategory = exact.categoryId;
+    }
+  }
+
+  sortAssignedIngredients(order: 'asc' | 'desc'): void {
+    if (order === 'asc') {
+      this.assignedIngredients.sort((a, b) => a.name.localeCompare(b.name, 'es', { sensitivity: 'base' }));
+    } else {
+      this.assignedIngredients.sort((a, b) => b.name.localeCompare(a.name, 'es', { sensitivity: 'base' }));
+    }
   }
 
   selectSuggestion(ing: Ingredient): void {
@@ -989,6 +1023,7 @@ export class DishEditComponent implements OnInit {
       this.assignedIngredients.push(ing);
     }
     this.newIngName = '';
+    this.newIngCategory = ing.categoryId || 'cat_viveres';
     this.showSuggestions = false;
   }
 
@@ -996,7 +1031,7 @@ export class DishEditComponent implements OnInit {
     const cleanName = this.newIngName.trim();
     if (!cleanName) return;
 
-    if (this.assignedIngredients.some(i => i.name.toLowerCase() === cleanName.toLowerCase())) {
+    if (this.assignedIngredients.some(i => isSameText(i.name, cleanName))) {
       this.newIngName = '';
       this.showSuggestions = false;
       return;
@@ -1006,7 +1041,17 @@ export class DishEditComponent implements OnInit {
     this.assignedIngredients.push(ing);
 
     this.newIngName = '';
+    this.newIngCategory = 'cat_viveres';
     this.showSuggestions = false;
+  }
+
+  async updateIngredientCategory(ing: Ingredient, newCatId: string): Promise<void> {
+    ing.categoryId = newCatId;
+    await this.firestoreService.saveIngredient({
+      ...ing,
+      categoryId: newCatId,
+      updatedAt: new Date().toISOString()
+    });
   }
 
   removeIngredientFromDish(index: number): void {
@@ -1043,7 +1088,8 @@ export class DishEditComponent implements OnInit {
     const savedDish = await this.menuService.createOrUpdateDish({
       id: this.dishId,
       name: this.dishName.trim(),
-      type: this.dishType,
+      type: this.selectedTypes[0] || 'protein',
+      types: this.selectedTypes,
       recipeUrl: this.recipeUrl.trim(),
       ingredientIds: this.assignedIngredients.map(i => i.id)
     });

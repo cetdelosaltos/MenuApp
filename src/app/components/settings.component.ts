@@ -98,6 +98,43 @@ import { IconComponent } from './icon.component';
           <span>{{ res.message }}</span>
         </div>
 
+        <!-- Firebase Permissions Instruction Box -->
+        <div *ngIf="syncService.permissionError()" class="rules-card">
+          <div class="rules-card-header">
+            <app-icon name="alert-triangle" [size]="20" extraClass="text-red"></app-icon>
+            <div>
+              <h4 class="rules-card-title">Solución al Error de Permisos en Firebase</h4>
+              <p class="rules-card-sub">Tu base de datos Cloud Firestore (proyecto <code>menu-app-nmg</code>) necesita actualizar sus reglas de seguridad.</p>
+            </div>
+          </div>
+
+          <ol class="rules-steps">
+            <li>Abre la <a href="https://console.firebase.google.com/project/menu-app-nmg/firestore/rules" target="_blank" class="rules-link">Consola Firebase &gt; Firestore &gt; pestaña Reglas (Rules)</a>.</li>
+            <li>Reemplaza el contenido por las siguientes reglas y haz clic en <strong>Publicar (Publish)</strong>:</li>
+          </ol>
+
+          <pre class="rules-code"><code>rules_version = '2';
+
+service cloud.firestore &#123;
+  match /databases/&#123;database&#125;/documents &#123;
+    match /households/&#123;householdId&#125;/&#123;document=**&#125; &#123;
+      allow read, write: if true;
+    &#125;
+  &#125;
+&#125;</code></pre>
+
+          <div class="rules-actions">
+            <button class="btn-copy-rules" (click)="copyRules()">
+              <app-icon name="copy" [size]="15"></app-icon>
+              <span>{{ copiedRules ? '¡Copiado con éxito!' : 'Copiar Reglas al Portapapeles' }}</span>
+            </button>
+            <button class="btn-retry-sync" (click)="testSync()">
+              <app-icon name="refresh" [size]="15" [extraClass]="syncService.isSyncing() ? 'spin' : ''"></app-icon>
+              <span>Reintentar Conexión</span>
+            </button>
+          </div>
+        </div>
+
       </div>
 
       <!-- Save Config Button -->
@@ -273,6 +310,97 @@ import { IconComponent } from './icon.component';
     .alert-success { background: #d1fae5; color: #065f46; }
     .alert-error { background: #fee2e2; color: #991b1b; }
 
+    /* Rules instruction card */
+    .rules-card {
+      margin-top: 14px;
+      padding: 16px;
+      background: #fff1f2;
+      border: 1px solid #fecdd3;
+      border-radius: 12px;
+      display: flex;
+      flex-direction: column;
+      gap: 12px;
+    }
+    .rules-card-header {
+      display: flex;
+      align-items: flex-start;
+      gap: 10px;
+    }
+    .rules-card-title {
+      font-size: 0.95rem;
+      font-weight: 700;
+      color: #9f1239;
+      margin: 0;
+    }
+    .rules-card-sub {
+      font-size: 0.8rem;
+      color: #be123c;
+      margin: 2px 0 0 0;
+    }
+    .rules-steps {
+      margin: 0;
+      padding-left: 20px;
+      font-size: 0.84rem;
+      color: #881337;
+      display: flex;
+      flex-direction: column;
+      gap: 6px;
+    }
+    .rules-link {
+      color: #be123c;
+      font-weight: 600;
+      text-decoration: underline;
+    }
+    .rules-code {
+      background: #1e293b;
+      color: #f8fafc;
+      padding: 12px 14px;
+      border-radius: 8px;
+      font-family: monospace;
+      font-size: 0.82rem;
+      line-height: 1.4;
+      overflow-x: auto;
+      margin: 0;
+    }
+    .rules-actions {
+      display: flex;
+      gap: 10px;
+      flex-wrap: wrap;
+    }
+    .btn-copy-rules {
+      display: inline-flex;
+      align-items: center;
+      gap: 6px;
+      background: #be123c;
+      color: #ffffff;
+      border: none;
+      padding: 8px 14px;
+      border-radius: 8px;
+      font-size: 0.82rem;
+      font-weight: 600;
+      cursor: pointer;
+      transition: background 0.15s ease;
+    }
+    .btn-copy-rules:hover {
+      background: #9f1239;
+    }
+    .btn-retry-sync {
+      display: inline-flex;
+      align-items: center;
+      gap: 6px;
+      background: #ffffff;
+      color: #be123c;
+      border: 1px solid #fecdd3;
+      padding: 8px 14px;
+      border-radius: 8px;
+      font-size: 0.82rem;
+      font-weight: 600;
+      cursor: pointer;
+    }
+    .btn-retry-sync:hover {
+      background: #fff1f2;
+    }
+
     .save-bar {
       display: flex;
       justify-content: flex-end;
@@ -307,6 +435,7 @@ export class SettingsComponent implements OnInit {
 
   householdCode = 'HOGAR-2026';
   householdName = 'Mi Hogar';
+  copiedRules = false;
 
   async ngOnInit(): Promise<void> {
     this.householdCode = this.firestoreService.householdCode();
@@ -327,5 +456,13 @@ export class SettingsComponent implements OnInit {
 
   async testSync(): Promise<void> {
     await this.syncService.syncNow();
+  }
+
+  copyRules(): void {
+    const rules = `rules_version = '2';\n\nservice cloud.firestore {\n  match /databases/{database}/documents {\n    match /households/{householdId}/{document=**} {\n      allow read, write: if true;\n    }\n  }\n}`;
+    navigator.clipboard.writeText(rules).then(() => {
+      this.copiedRules = true;
+      setTimeout(() => this.copiedRules = false, 3000);
+    });
   }
 }

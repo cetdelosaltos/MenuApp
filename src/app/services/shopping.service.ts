@@ -1,7 +1,8 @@
 import { Injectable, inject, signal, computed } from '@angular/core';
 import { FirestoreService } from './firestore.service';
 import { MenuService } from './menu.service';
-import { ShoppingItem, Category, Ingredient, ShoppingItemStatus } from '../models/types';
+import { ShoppingItem, Category, Ingredient, ShoppingItemStatus, PlannedDishItem, Dish } from '../models/types';
+import { normalizeText, isSameText } from '../utils/string-utils';
 
 export interface CategoryShoppingGroup {
   category: Category;
@@ -26,7 +27,7 @@ export class ShoppingService {
   pendingGroupedItems = computed<CategoryShoppingGroup[]>(() => {
     const allCategories = this.categories();
     const pendingItems = this.items().filter(i => !i.deletedAt && i.status === 'pending');
-    
+
     // Sort categories by orderIndex
     const sortedCats = [...allCategories].sort((a, b) => (a.orderIndex ?? 0) - (b.orderIndex ?? 0));
     const groups: CategoryShoppingGroup[] = [];
@@ -86,8 +87,8 @@ export class ShoppingService {
     // Realtime listeners handled by FirestoreService
   }
 
-  async loadCategories(): Promise<void> {}
-  async loadShoppingItems(): Promise<void> {}
+  async loadCategories(): Promise<void> { }
+  async loadShoppingItems(): Promise<void> { }
 
   /**
    * Normalize unit string for standard comparisons
@@ -294,21 +295,26 @@ export class ShoppingService {
   }
 
   /**
-   * Synchronize the shopping list with the current week's menu items.
-   * - Resets status to 'pending' (even if previously marked as 'purchased' or 'in_pantry').
-   * - Sums/aggregates quantities of ingredients across all dishes in the weekly menu.
+   * Synchronize the shopping list with the current menu items.
+   * - Extracts ingredients from all meals across the week's plan.
+   * - Aggregates quantities.
+   * - Adds new items as 'pending' or updates quantities for existing items.
+   * - NEVER deletes pending items automatically (prevents weekend list wipeout).
+   * - Preserves manual items, in_pantry items, and purchased items.
    */
   async syncWithMenu(): Promise<void> {
     const menu = this.menuService.currentMenu();
-    if (!menu) return;
+    if (!menu || !menu.weekStartDate) return;
 
-    const now = new Date().toISOString();
+    const now = new Date();
     const currentShopping = this.items();
     const allIngredients = this.menuService.allIngredients();
-    const ingMap = new Map<string, Ingredient>();
-    allIngredients.forEach(i => ingMap.set(i.name.toLowerCase().trim(), i));
+    const allDishes = this.menuService.allDishes();
 
-    // 1. Extract and group all ingredient occurrences from the menu's 7 days
+    const ingMap = new Map<string, Ingredient>();
+    allIngredients.forEach(i => ingMap.set(normalizeText(i.name), i));
+
+    // 1. Extract and group ingredient occurrences across all 7 days of the menu
     interface GroupedIngData {
       displayName: string;
       categoryId: string;
@@ -322,21 +328,76 @@ export class ShoppingService {
       const plan = menu.days[day];
       if (!plan) continue;
 
-      const dishes = [
-        plan.breakfast,
-        plan.lunchProtein,
-        ...(plan.lunchSides || []),
-        plan.dinner
-      ].filter(Boolean);
+      const dishes: (PlannedDishItem | null)[] = [];
+      if (plan.breakfast) dishes.push(plan.breakfast);
+      if (plan.lunchProtein) dishes.push(plan.lunchProtein);
+      if (plan.lunchSides?.length) dishes.push(...plan.lunchSides);
+      if (plan.dinner) dishes.push(plan.dinner);
 
       for (const dish of dishes) {
-        if (!dish || !dish.ingredients) continue;
-        for (const ing of dish.ingredients) {
-          if (!ing.name || !ing.name.trim()) continue;
+        if (!dish) continue;
 
+        // Find associated dish from the master Catalog (by ID or exact name)
+        let catalogDish: Dish | undefined;
+        if (dish.dishId) {
+          catalogDish = allDishes.find(d => !d.deletedAt && d.id === dish.dishId);
+        }
+        if (!catalogDish && dish.name) {
+          catalogDish = allDishes.find(d => !d.deletedAt && isSameText(d.name, dish.name));
+        }
+
+        interface ExtractedIng {
+          id?: string;
+          name: string;
+          categoryId?: string;
+          quantity?: string;
+          unit?: string;
+        }
+
+        const dishIngredients: ExtractedIng[] = [];
+        const seenNormNames = new Set<string>();
+
+        // A. Add ingredients explicitly stored on the planned item (may have custom quantities/units)
+        if (dish.ingredients && Array.isArray(dish.ingredients)) {
+          for (const ing of dish.ingredients) {
+            if (!ing || !ing.name || !ing.name.trim()) continue;
+            const cleanName = ing.name.trim();
+            const norm = normalizeText(cleanName);
+            seenNormNames.add(norm);
+            dishIngredients.push({
+              id: ing.id,
+              name: cleanName,
+              categoryId: ing.categoryId,
+              quantity: ing.quantity,
+              unit: ing.unit
+            });
+          }
+        }
+
+        // B. ALWAYS also check the Catalog recipe to ensure 100% of declared ingredients are included!
+        if (catalogDish && catalogDish.ingredientIds && catalogDish.ingredientIds.length > 0) {
+          for (const ingId of catalogDish.ingredientIds) {
+            const foundIng = allIngredients.find(i => !i.deletedAt && i.id === ingId);
+            if (!foundIng || !foundIng.name) continue;
+            const norm = normalizeText(foundIng.name);
+            if (!seenNormNames.has(norm)) {
+              seenNormNames.add(norm);
+              dishIngredients.push({
+                id: foundIng.id,
+                name: foundIng.name,
+                categoryId: foundIng.categoryId || 'cat_viveres',
+                quantity: '',
+                unit: ''
+              });
+            }
+          }
+        }
+
+        // Group into the needed ingredients map
+        for (const ing of dishIngredients) {
           const cleanName = ing.name.trim();
-          const foundIng = ingMap.get(cleanName.toLowerCase());
-          const groupKey = (foundIng ? foundIng.name : cleanName).toLowerCase().trim();
+          const foundIng = ingMap.get(normalizeText(cleanName)) || (ing.id ? allIngredients.find(i => i.id === ing.id) : undefined);
+          const groupKey = normalizeText(foundIng ? foundIng.name : cleanName);
 
           const existingGroup = groupedNeeded.get(groupKey);
           if (existingGroup) {
@@ -359,7 +420,10 @@ export class ShoppingService {
       }
     }
 
+    if (groupedNeeded.size === 0) return;
+
     // 2. Build list of items to update/insert in Firestore
+    const nowIso = now.toISOString();
     const itemsToSave: ShoppingItem[] = [];
 
     for (const [key, group] of groupedNeeded) {
@@ -367,7 +431,7 @@ export class ShoppingService {
       const foundIng = ingMap.get(key);
 
       const matches = currentShopping.filter(item => {
-        const matchesName = item.name && item.name.toLowerCase().trim() === key;
+        const matchesName = item.name && isSameText(item.name, group.displayName);
         const matchesId = (group.ingredientId && item.ingredientId && item.ingredientId === group.ingredientId);
         return matchesName || matchesId;
       });
@@ -379,11 +443,14 @@ export class ShoppingService {
         primaryItem.ingredientId = group.ingredientId || primaryItem.ingredientId;
         primaryItem.quantity = aggregated.quantity;
         primaryItem.unit = aggregated.unit;
-        primaryItem.status = 'pending'; // Always put back to pending for new requirements
+
+        // CRITICAL FIX: Reactivate item as 'pending' so it appears in this week's active shopping list!
+        // Even if it was purchased or in pantry from past weeks, this week's menu explicitly requires it.
+        primaryItem.status = 'pending';
         primaryItem.sourceType = 'menu';
         primaryItem.sourceWeekStartDate = menu.weekStartDate;
         primaryItem.deletedAt = null;
-        primaryItem.updatedAt = now;
+        primaryItem.updatedAt = nowIso;
 
         itemsToSave.push(primaryItem);
       } else {
@@ -399,7 +466,7 @@ export class ShoppingService {
           sourceType: 'menu',
           sourceWeekStartDate: menu.weekStartDate,
           lastPurchasedAt: foundIng?.lastPurchasedAt,
-          updatedAt: now
+          updatedAt: nowIso
         };
         itemsToSave.push(newItem);
       }
@@ -490,7 +557,7 @@ export class ShoppingService {
    */
   async addManualItem(name: string, categoryId: string, quantity = '', unit = ''): Promise<ShoppingItem> {
     const cleanName = name.trim();
-    const foundIng = this.menuService.allIngredients().find(i => i.name.toLowerCase() === cleanName.toLowerCase());
+    const foundIng = this.menuService.allIngredients().find(i => isSameText(i.name, cleanName));
 
     const newItem: ShoppingItem = {
       id: `shop_man_${Date.now()}_${Math.random().toString(36).substring(2, 6)}`,
