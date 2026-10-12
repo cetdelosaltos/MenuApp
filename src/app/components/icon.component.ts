@@ -178,8 +178,15 @@ import { CommonModule } from '@angular/common';
         <path d="M5 15H4a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h9a2 2 0 0 1 2 2v1"></path>
       </ng-container>
 
+      <!-- Download -->
+      <ng-container *ngIf="name === 'download'">
+        <path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"></path>
+        <polyline points="7 10 12 15 17 10"></polyline>
+        <line x1="12" y1="15" x2="12" y2="3"></line>
+      </ng-container>
+
       <!-- Default circle if unknown -->
-      <circle *ngIf="!['calendar', 'shopping-cart', 'cart', 'check', 'ok', 'x', 'close', 'plus', 'edit', 'pencil', 'trash', 'printer', 'print', 'chevron-left', 'chevron-right', 'refresh', 'sync', 'cloud', 'wifi', 'wifi-off', 'external-link', 'link', 'history', 'book', 'home', 'utensils', 'food', 'search', 'tag', 'settings', 'grip', 'drag', 'alert-triangle', 'warning', 'copy'].includes(name)" cx="12" cy="12" r="10"></circle>
+      <circle *ngIf="!['calendar', 'shopping-cart', 'cart', 'check', 'ok', 'x', 'close', 'plus', 'edit', 'pencil', 'trash', 'printer', 'print', 'chevron-left', 'chevron-right', 'refresh', 'sync', 'cloud', 'wifi', 'wifi-off', 'external-link', 'link', 'history', 'book', 'home', 'utensils', 'food', 'search', 'tag', 'settings', 'grip', 'drag', 'alert-triangle', 'warning', 'copy', 'download'].includes(name)" cx="12" cy="12" r="10"></circle>
     </svg>
   `
 })

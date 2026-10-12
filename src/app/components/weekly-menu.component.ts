@@ -1591,6 +1591,7 @@ export class WeeklyMenuComponent {
       await this.menuService.setDaySlot(this.selectedDayIndex, this.selectedSlotType, item);
     }
     this.showModal = false;
+    await this.shoppingService.syncWithMenu();
   }
 
   async onClearModalSlot(): Promise<void> {
@@ -1600,6 +1601,7 @@ export class WeeklyMenuComponent {
       await this.menuService.setDaySlot(this.selectedDayIndex, this.selectedSlotType, null);
     }
     this.showModal = false;
+    await this.shoppingService.syncWithMenu();
   }
 
   async removeSide(dayIndex: number, sideIndex: number): Promise<void> {

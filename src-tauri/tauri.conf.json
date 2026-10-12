@@ -1,7 +1,7 @@
 {
   "$schema": "../node_modules/@tauri-apps/cli/config.schema.json",
   "productName": "menu-app",
-  "version": "1.0.5",
+  "version": "1.2.1",
   "identifier": "com.menuapp.app",
   "build": {
     "frontendDist": "../dist/menu-app/browser",

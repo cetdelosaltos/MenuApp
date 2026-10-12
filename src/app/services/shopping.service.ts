@@ -453,6 +453,14 @@ export class ShoppingService {
         primaryItem.updatedAt = nowIso;
 
         itemsToSave.push(primaryItem);
+
+        // Limpiar cualquier registro duplicado anterior para el mismo artículo
+        for (let i = 1; i < matches.length; i++) {
+          const dup = { ...matches[i] };
+          dup.deletedAt = nowIso;
+          dup.updatedAt = nowIso;
+          itemsToSave.push(dup);
+        }
       } else {
         const newItem: ShoppingItem = {
           id: `shop_${Date.now()}_${Math.random().toString(36).substring(2, 6)}`,
@@ -558,12 +566,37 @@ export class ShoppingService {
   async addManualItem(name: string, categoryId: string, quantity = '', unit = ''): Promise<ShoppingItem> {
     const cleanName = name.trim();
     const foundIng = this.menuService.allIngredients().find(i => isSameText(i.name, cleanName));
+    const finalCatId = categoryId || foundIng?.categoryId || 'cat_otros';
+
+    // Si el usuario especificó una categoría diferente a la del catálogo maestro, actualizar el ingrediente globalmente
+    if (foundIng && categoryId && foundIng.categoryId !== categoryId) {
+      await this.menuService.updateIngredientCategoryGlobally(foundIng.id, categoryId, cleanName);
+    }
+
+    // Comprobar si ya existe un artículo en la lista de compras (activo o borrado suave)
+    const existing = this.items().find(i => isSameText(i.name, cleanName) || (foundIng && i.ingredientId === foundIng.id));
+
+    if (existing) {
+      const updated: ShoppingItem = {
+        ...existing,
+        name: cleanName,
+        categoryId: finalCatId,
+        ingredientId: foundIng?.id || existing.ingredientId,
+        quantity: quantity.trim() || existing.quantity,
+        unit: unit.trim() || existing.unit,
+        status: 'pending',
+        deletedAt: null,
+        updatedAt: new Date().toISOString()
+      };
+      await this.firestoreService.saveShoppingItem(updated);
+      return updated;
+    }
 
     const newItem: ShoppingItem = {
       id: `shop_man_${Date.now()}_${Math.random().toString(36).substring(2, 6)}`,
       householdId: this.firestoreService.householdCode(),
       name: cleanName,
-      categoryId: categoryId || foundIng?.categoryId || 'cat_otros',
+      categoryId: finalCatId,
       ingredientId: foundIng?.id,
       quantity: quantity.trim(),
       unit: unit.trim(),
@@ -575,6 +608,31 @@ export class ShoppingService {
 
     await this.firestoreService.saveShoppingItem(newItem);
     return newItem;
+  }
+
+  /**
+   * Actualizar la categoría de un artículo directamente desde la lista de compras
+   */
+  async updateItemCategory(itemId: string, newCategoryId: string): Promise<void> {
+    const item = this.items().find(i => i.id === itemId);
+    if (!item || !newCategoryId) return;
+
+    const updated: ShoppingItem = {
+      ...item,
+      categoryId: newCategoryId,
+      updatedAt: new Date().toISOString()
+    };
+    await this.firestoreService.saveShoppingItem(updated);
+
+    // Si está asociado a un ingrediente del catálogo, actualizarlo globalmente
+    if (item.ingredientId) {
+      await this.menuService.updateIngredientCategoryGlobally(item.ingredientId, newCategoryId, item.name);
+    } else {
+      const foundIng = this.menuService.allIngredients().find(i => isSameText(i.name, item.name));
+      if (foundIng) {
+        await this.menuService.updateIngredientCategoryGlobally(foundIng.id, newCategoryId, item.name);
+      }
+    }
   }
 
   /**

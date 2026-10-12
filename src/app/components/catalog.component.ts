@@ -1450,13 +1450,7 @@ export class CatalogComponent implements OnInit {
     const name = this.inlineEditName.trim();
     if (!name) return;
 
-    const updated: Ingredient = {
-      ...ing,
-      name: name,
-      categoryId: this.inlineEditCat,
-      updatedAt: new Date().toISOString()
-    };
-    await this.firestoreService.saveIngredient(updated);
+    await this.menuService.updateIngredientCategoryGlobally(ing.id, this.inlineEditCat, name);
     this.cancelInlineEdit();
   }
 

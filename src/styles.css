@@ -359,3 +359,11 @@ input, select, textarea {
     line-height: 1.15 !important;
   }
 }
+
+/* Ensure all modals and bottom-sheets render above top header and mobile bottom navigation */
+.modal-backdrop,
+.dish-sheet-backdrop,
+.cdk-overlay-container,
+.cdk-global-overlay-wrapper {
+  z-index: 99999 !important;
+}

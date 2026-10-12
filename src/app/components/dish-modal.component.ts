@@ -130,6 +130,7 @@ import { matchesSearch, isSameText } from '../utils/string-utils';
               <select
                 class="form-input form-input-sm cat-select-input"
                 [(ngModel)]="newIngCat"
+                (change)="userSelectedCategory = true"
                 title="Categoría para la lista de compras"
               >
                 <option *ngFor="let c of categories()" [value]="c.id">{{ c.name }}</option>
@@ -276,7 +277,7 @@ import { matchesSearch, isSameText } from '../utils/string-utils';
       display: flex;
       align-items: flex-start;
       justify-content: center;
-      z-index: 9999;
+      z-index: 99999;
       padding: 24px 16px;
       overflow-y: auto;
       animation: fadeIn 0.15s ease-out;
@@ -895,7 +896,7 @@ import { matchesSearch, isSameText } from '../utils/string-utils';
       }
 
       .modal-footer {
-        padding: 12px 14px 28px;
+        padding: 14px 16px max(28px, calc(18px + env(safe-area-inset-bottom, 0px)));
       }
     }
   `]
@@ -928,6 +929,7 @@ export class DishModalComponent implements OnInit {
 
   newIngName = '';
   newIngCat = 'cat_viveres';
+  userSelectedCategory = false;
   newIngQty = '';
   newIngUnit = '';
   showIngSuggestions = false;
@@ -957,10 +959,10 @@ export class DishModalComponent implements OnInit {
       this.recipeUrl = this.existingItem.recipeUrl || '';
       const allIngs = this.menuService.allIngredients();
       this.tempIngredients = (this.existingItem.ingredients || []).map(i => {
-        const found = allIngs.find(a => a.id === i.id);
+        const found = allIngs.find(a => a.id === i.id || isSameText(a.name, i.name));
         return {
           ...i,
-          categoryId: i.categoryId || found?.categoryId || 'cat_viveres',
+          categoryId: found?.categoryId || i.categoryId || 'cat_viveres',
           quantity: i.quantity || '',
           unit: i.unit || ''
         };
@@ -1018,6 +1020,7 @@ export class DishModalComponent implements OnInit {
     if (!this.newIngName.trim()) {
       this.showIngSuggestions = false;
       this.filteredIngredients = [];
+      this.userSelectedCategory = false;
       return;
     }
 
@@ -1028,16 +1031,27 @@ export class DishModalComponent implements OnInit {
 
     this.showIngSuggestions = this.filteredIngredients.length > 0;
 
-    // Auto select category if exact match found
-    const exact = this.menuService.allIngredients().find(i => isSameText(i.name, query));
-    if (exact && exact.categoryId) {
-      this.newIngCat = exact.categoryId;
+    // Solo auto-seleccionar categoría si el usuario no ha elegido una manualmente
+    if (!this.userSelectedCategory) {
+      const exact = this.menuService.allIngredients().find(i => isSameText(i.name, query));
+      if (exact && exact.categoryId) {
+        this.newIngCat = exact.categoryId;
+      }
     }
   }
 
   selectIngredient(ing: Ingredient): void {
-    const assignedCat = ing.categoryId || this.newIngCat || 'cat_viveres';
-    if (!this.tempIngredients.some(t => t.id === ing.id || isSameText(t.name, ing.name))) {
+    // Si el usuario eligió una categoría explícitamente en el selector, respetarla
+    const assignedCat = (this.userSelectedCategory && this.newIngCat) ? this.newIngCat : (ing.categoryId || this.newIngCat || 'cat_viveres');
+    const existing = this.tempIngredients.find(t => t.id === ing.id || isSameText(t.name, ing.name));
+
+    if (existing) {
+      // Actualizar su categoría y cantidad en lugar de ignorar silenciosamente
+      existing.categoryId = assignedCat;
+      if (this.newIngQty) existing.quantity = this.newIngQty;
+      if (this.newIngUnit) existing.unit = this.newIngUnit;
+      this.menuService.updateIngredientCategoryGlobally(ing.id, assignedCat, ing.name);
+    } else {
       this.tempIngredients.push({
         id: ing.id,
         name: ing.name,
@@ -1045,11 +1059,16 @@ export class DishModalComponent implements OnInit {
         quantity: this.newIngQty || '',
         unit: this.newIngUnit || ''
       });
+      if (assignedCat !== ing.categoryId) {
+        this.menuService.updateIngredientCategoryGlobally(ing.id, assignedCat, ing.name);
+      }
     }
+
     this.newIngName = '';
     this.newIngQty = '';
     this.newIngUnit = '';
     this.newIngCat = 'cat_viveres';
+    this.userSelectedCategory = false;
     this.showIngSuggestions = false;
   }
 
@@ -1062,22 +1081,16 @@ export class DishModalComponent implements OnInit {
   }
 
   async addIngredientFromInput(): Promise<void> {
-    if (!this.newIngName.trim()) return;
+    const cleanName = this.newIngName.trim();
+    if (!cleanName) return;
 
-    const ing = await this.menuService.createOrGetIngredient(this.newIngName.trim(), this.newIngCat);
+    const ing = await this.menuService.createOrGetIngredient(cleanName, this.newIngCat);
     this.selectIngredient(ing);
   }
 
   async updateIngredientCategory(item: { id: string; name: string; categoryId?: string }): Promise<void> {
     if (!item.id || !item.categoryId) return;
-    const found = this.menuService.allIngredients().find(i => i.id === item.id);
-    if (found) {
-      await this.firestoreService.saveIngredient({
-        ...found,
-        categoryId: item.categoryId,
-        updatedAt: new Date().toISOString()
-      });
-    }
+    await this.menuService.updateIngredientCategoryGlobally(item.id, item.categoryId, item.name);
   }
 
   removeIngredientPartial(index: number): void {

@@ -207,12 +207,88 @@ export class MenuService {
     return dish;
   }
 
+  async updateIngredientCategoryGlobally(ingredientId: string, newCategoryId: string, newName?: string): Promise<void> {
+    const allIngs = this.allIngredients();
+    const targetIng = allIngs.find(i => i.id === ingredientId);
+    const cleanName = newName ? newName.trim() : (targetIng?.name || '');
+    const nowIso = new Date().toISOString();
+
+    // 1. Actualizar el ingrediente en la colección maestra de Firestore
+    if (targetIng) {
+      await this.firestoreService.saveIngredient({
+        ...targetIng,
+        name: cleanName || targetIng.name,
+        categoryId: newCategoryId,
+        updatedAt: nowIso
+      });
+    }
+
+    // 2. Sincronizar todos los artículos existentes en la Lista de Compras
+    const shoppingItems = this.firestoreService.shoppingItems();
+    const matchingShoppingItems = shoppingItems.filter(item => {
+      const matchId = item.ingredientId && item.ingredientId === ingredientId;
+      const matchName = cleanName && item.name && isSameText(item.name, cleanName);
+      return matchId || matchName;
+    });
+
+    if (matchingShoppingItems.length > 0) {
+      const updatedShoppingList = matchingShoppingItems.map(item => ({
+        ...item,
+        categoryId: newCategoryId,
+        name: cleanName || item.name,
+        ingredientId: item.ingredientId || ingredientId,
+        updatedAt: nowIso
+      }));
+      await this.firestoreService.saveShoppingItemsBatch(updatedShoppingList);
+    }
+
+    // 3. Sincronizar los platos planificados en el menú actual (para que no conserven la categoría vieja en memoria/Firestore)
+    const currentMenu = this.currentMenu();
+    if (currentMenu && currentMenu.days) {
+      let menuModified = false;
+      const updatedMenu = JSON.parse(JSON.stringify(currentMenu)) as WeeklyMenu;
+
+      for (let day = 0; day < 7; day++) {
+        const plan = updatedMenu.days[day];
+        if (!plan) continue;
+
+        const slots = [plan.breakfast, plan.lunchProtein, plan.dinner, ...(plan.lunchSides || [])];
+        for (const slot of slots) {
+          if (slot && slot.ingredients && Array.isArray(slot.ingredients)) {
+            for (const ing of slot.ingredients) {
+              const matchId = ing.id && ing.id === ingredientId;
+              const matchName = cleanName && ing.name && isSameText(ing.name, cleanName);
+              if (matchId || matchName) {
+                ing.categoryId = newCategoryId;
+                if (cleanName) ing.name = cleanName;
+                menuModified = true;
+              }
+            }
+          }
+        }
+      }
+
+      if (menuModified) {
+        await this.saveCurrentMenu(updatedMenu);
+      }
+    }
+  }
+
   async createOrGetIngredient(name: string, categoryId = 'cat_viveres'): Promise<Ingredient> {
     const cleanName = name.trim();
     const existing = this.allIngredients()
       .find(i => !i.deletedAt && isSameText(i.name, cleanName));
 
     if (existing) {
+      // Si el usuario especificó una categoría diferente o explícita, actualizarla globalmente
+      if (categoryId && categoryId !== existing.categoryId) {
+        await this.updateIngredientCategoryGlobally(existing.id, categoryId, cleanName);
+        return {
+          ...existing,
+          name: cleanName,
+          categoryId
+        };
+      }
       return existing;
     }
 

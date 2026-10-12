@@ -38,9 +38,10 @@
           <span>Recetas & Ingredientes</span>
         </button>
 
-        <button class="nav-item-btn" [class.active]="activeTab() === 'settings'" (click)="setTab('settings')">
+        <button class="nav-item-btn" [class.active]="activeTab() === 'settings'" (click)="setTab('settings')" style="position: relative;">
           <app-icon name="settings" [size]="18"></app-icon>
           <span>Configuración</span>
+          <span *ngIf="updateService.hasUpdate()" class="nav-update-dot"></span>
         </button>
       </nav>
 
@@ -58,6 +59,29 @@
   <!-- Main Content Container -->
   <main class="app-main-container">
     
+    <!-- New Update Available Banner -->
+    <div *ngIf="updateService.hasUpdate() && !updateService.dismissed()" class="app-update-banner animate-fade">
+      <div class="update-banner-left">
+        <div class="update-pulse-icon">🚀</div>
+        <div class="update-banner-text">
+          <div class="update-banner-title">
+            <strong>Nueva versión disponible: v{{ updateService.availableRelease()?.version }}</strong>
+            <span class="badge badge-emerald">Recomendada</span>
+          </div>
+          <p class="update-banner-notes">{{ updateService.availableRelease()?.notes || 'Hay mejoras y nuevas correcciones disponibles.' }}</p>
+        </div>
+      </div>
+      <div class="update-banner-actions">
+        <button class="btn-update-now" (click)="updateService.downloadAndInstall()">
+          <app-icon name="download" [size]="16"></app-icon>
+          <span>Descargar e Instalar ({{ updateService.isAndroid ? 'APK' : 'Setup' }})</span>
+        </button>
+        <button class="btn-update-later" (click)="updateService.dismissUpdate()" title="Recordármelo más tarde">
+          ✕
+        </button>
+      </div>
+    </div>
+
     <!-- Firebase Permissions Alert Banner -->
     <div *ngIf="syncService.permissionError()" class="firebase-permission-banner">
       <div class="banner-icon">⚠️</div>
@@ -102,7 +126,10 @@
     </button>
 
     <button class="mobile-nav-btn" [class.active]="activeTab() === 'settings'" (click)="setTab('settings')">
-      <app-icon name="settings" [size]="20"></app-icon>
+      <div class="mobile-icon-wrap">
+        <app-icon name="settings" [size]="20"></app-icon>
+        <span *ngIf="updateService.hasUpdate()" class="mobile-badge-dot mobile-badge-update"></span>
+      </div>
       <span>Ajustes</span>
     </button>
   </nav>

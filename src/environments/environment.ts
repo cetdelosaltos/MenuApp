@@ -1,5 +1,7 @@
 export const environment = {
   production: false,
+  appVersion: '1.2.1',
+  appVersionCode: 4,
   firebase: {
     apiKey: "AIzaSyD5I9FcQ22mgkJfsvjhPRAQGppl_Bw0EPg",
     authDomain: "menu-app-nmg.firebaseapp.com",

@@ -304,7 +304,7 @@ import { matchesSearch, isSameText } from '../utils/string-utils';
       height: 100dvh;
       background: rgba(15, 23, 42, 0.45);
       backdrop-filter: blur(2px);
-      z-index: 9999;
+      z-index: 99999;
       display: flex;
       align-items: flex-end;
       justify-content: center;
@@ -836,7 +836,7 @@ import { matchesSearch, isSameText } from '../utils/string-utils';
       display: flex;
       gap: 10px;
       padding: 14px 14px;
-      padding-bottom: max(16px, calc(10px + env(safe-area-inset-bottom, 0px)));
+      padding-bottom: max(24px, calc(16px + env(safe-area-inset-bottom, 0px)));
       background: #ffffff;
       border-top: 1px solid #e2e8f0;
       align-items: center;
@@ -1031,7 +1031,12 @@ export class DishEditComponent implements OnInit {
     const cleanName = this.newIngName.trim();
     if (!cleanName) return;
 
-    if (this.assignedIngredients.some(i => isSameText(i.name, cleanName))) {
+    const existingAssigned = this.assignedIngredients.find(i => isSameText(i.name, cleanName));
+    if (existingAssigned) {
+      if (this.newIngCategory && existingAssigned.categoryId !== this.newIngCategory) {
+        existingAssigned.categoryId = this.newIngCategory;
+        await this.menuService.updateIngredientCategoryGlobally(existingAssigned.id, this.newIngCategory, existingAssigned.name);
+      }
       this.newIngName = '';
       this.showSuggestions = false;
       return;
@@ -1047,11 +1052,7 @@ export class DishEditComponent implements OnInit {
 
   async updateIngredientCategory(ing: Ingredient, newCatId: string): Promise<void> {
     ing.categoryId = newCatId;
-    await this.firestoreService.saveIngredient({
-      ...ing,
-      categoryId: newCatId,
-      updatedAt: new Date().toISOString()
-    });
+    await this.menuService.updateIngredientCategoryGlobally(ing.id, newCatId, ing.name);
   }
 
   removeIngredientFromDish(index: number): void {

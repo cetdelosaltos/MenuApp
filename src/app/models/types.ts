@@ -116,3 +116,18 @@ export interface SyncResponse {
   };
   message?: string;
 }
+
+export interface AppPlatformRelease {
+  version: string;
+  versionCode?: number;
+  downloadUrl: string;
+  notes: string;
+  mandatory?: boolean;
+  publishedAt: string;
+}
+
+export interface AppVersionConfig {
+  android?: AppPlatformRelease;
+  desktop?: AppPlatformRelease;
+  updatedAt?: string;
+}

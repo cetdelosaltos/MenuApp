@@ -3,6 +3,7 @@ import { CommonModule } from '@angular/common';
 import { FormsModule } from '@angular/forms';
 import { SyncService } from '../services/sync.service';
 import { FirestoreService } from '../services/firestore.service';
+import { UpdateService } from '../services/update.service';
 import { IconComponent } from './icon.component';
 
 @Component({
@@ -135,6 +136,109 @@ service cloud.firestore &#123;
           </div>
         </div>
 
+      </div>
+
+      <!-- App Version & Remote Update Card -->
+      <div class="config-card">
+        <div class="card-icon-title">
+          <app-icon name="download" [size]="20" extraClass="text-emerald"></app-icon>
+          <div>
+            <h3 class="card-title">Actualización de la Aplicación</h3>
+            <p class="card-sub">Consulta si hay nuevas versiones publicadas en Firebase o actualiza la versión del sistema.</p>
+          </div>
+        </div>
+
+        <div class="sync-actions-box">
+          <div class="sync-info">
+            <div class="info-line">
+              <span class="info-label">Plataforma actual:</span>
+              <span class="badge badge-gray">{{ updateService.platformName }}</span>
+            </div>
+            <div class="info-line">
+              <span class="info-label">Versión instalada:</span>
+              <span class="badge badge-emerald">v{{ updateService.currentVersion }} (Build {{ updateService.currentVersionCode }})</span>
+            </div>
+            <div class="info-line">
+              <span class="info-label">Estado:</span>
+              <span *ngIf="updateService.hasUpdate()" class="badge badge-amber font-bold">
+                ¡Nueva versión disponible: v{{ updateService.availableRelease()?.version }}!
+              </span>
+              <span *ngIf="!updateService.hasUpdate()" class="text-muted">
+                Tu aplicación está actualizada a la versión más reciente.
+              </span>
+            </div>
+          </div>
+
+          <button
+            class="btn-sync-now"
+            (click)="onCheckUpdates()"
+            [disabled]="updateService.isChecking()"
+          >
+            <app-icon name="refresh" [size]="16" [extraClass]="updateService.isChecking() ? 'spin' : ''"></app-icon>
+            <span>Buscar Actualizaciones</span>
+          </button>
+        </div>
+
+        <!-- Available update alert action inside settings -->
+        <div *ngIf="updateService.hasUpdate()" class="update-detected-card">
+          <div class="update-detected-header">
+            <strong>🚀 Versión {{ updateService.availableRelease()?.version }} lista para instalar</strong>
+          </div>
+          <p class="update-detected-notes">{{ updateService.availableRelease()?.notes }}</p>
+          <div class="update-detected-actions">
+            <button class="btn-download-update" (click)="updateService.downloadAndInstall()">
+              <app-icon name="download" [size]="16"></app-icon>
+              <span>Descargar e Instalar ({{ updateService.isAndroid ? 'APK' : 'Setup' }})</span>
+            </button>
+          </div>
+        </div>
+
+        <!-- Admin Publisher Panel Accordion -->
+        <div class="admin-panel-toggle">
+          <button type="button" class="btn-toggle-admin" (click)="showAdminPublisher = !showAdminPublisher">
+            <span>{{ showAdminPublisher ? '▼ Ocultar Panel de Publicación' : '▶ Panel de Administrador: Publicar Nueva Versión' }}</span>
+          </button>
+        </div>
+
+        <div *ngIf="showAdminPublisher" class="admin-publish-box animate-fade">
+          <h4 class="admin-publish-title">Publicar Actualización Remota en Firebase</h4>
+          <p class="admin-publish-sub">Al guardar, todos los dispositivos recibirán la notificación de actualización de inmediato.</p>
+
+          <div class="form-row">
+            <div class="form-group flex-1">
+              <label>Plataforma a Actualizar</label>
+              <select class="form-input" [(ngModel)]="publishPlatform">
+                <option value="android">Android (APK)</option>
+                <option value="desktop">Windows Desktop (.exe / .msi)</option>
+              </select>
+            </div>
+            <div class="form-group flex-1">
+              <label>Número de Versión</label>
+              <input type="text" class="form-input" [(ngModel)]="publishVersion" placeholder="Ej: 1.2.1" />
+            </div>
+            <div class="form-group flex-1" *ngIf="publishPlatform === 'android'">
+              <label>Version Code</label>
+              <input type="number" class="form-input" [(ngModel)]="publishVersionCode" placeholder="Ej: 3" />
+            </div>
+          </div>
+
+          <div class="form-group">
+            <label>URL de Descarga Directa</label>
+            <input type="text" class="form-input" [(ngModel)]="publishDownloadUrl" placeholder="https://..." />
+          </div>
+
+          <div class="form-group">
+            <label>Notas de la Versión</label>
+            <textarea class="form-input" [(ngModel)]="publishNotes" rows="2" placeholder="Novedades o correcciones..."></textarea>
+          </div>
+
+          <div class="admin-actions">
+            <button class="btn-publish-now" (click)="onPublishRelease()">
+              <app-icon name="cloud" [size]="16"></app-icon>
+              <span>Publicar Versión en Firebase</span>
+            </button>
+          </div>
+        </div>
       </div>
 
       <!-- Save Config Button -->
@@ -420,6 +524,114 @@ service cloud.firestore &#123;
     }
     .btn-save-config:hover { background: #059669; }
 
+    .update-detected-card {
+      margin-top: 14px;
+      background: #ecfdf5;
+      border: 1.5px solid #10b981;
+      border-radius: 12px;
+      padding: 14px 16px;
+      display: flex;
+      flex-direction: column;
+      gap: 8px;
+    }
+
+    .update-detected-header {
+      color: #065f46;
+      font-size: 0.95rem;
+    }
+
+    .update-detected-notes {
+      color: #047857;
+      font-size: 0.85rem;
+      margin: 0;
+    }
+
+    .btn-download-update {
+      align-self: flex-start;
+      background: #10b981;
+      color: #ffffff;
+      border: none;
+      padding: 8px 16px;
+      border-radius: 8px;
+      font-weight: 700;
+      font-size: 0.86rem;
+      cursor: pointer;
+      display: inline-flex;
+      align-items: center;
+      gap: 6px;
+      transition: background 0.15s ease;
+    }
+    .btn-download-update:hover {
+      background: #059669;
+    }
+
+    .admin-panel-toggle {
+      margin-top: 14px;
+      border-top: 1px dashed #e2e8f0;
+      padding-top: 12px;
+    }
+
+    .btn-toggle-admin {
+      background: transparent;
+      border: none;
+      color: #64748b;
+      font-size: 0.82rem;
+      font-weight: 600;
+      cursor: pointer;
+      padding: 0;
+    }
+    .btn-toggle-admin:hover {
+      color: #0f172a;
+    }
+
+    .admin-publish-box {
+      margin-top: 12px;
+      background: #f8fafc;
+      border: 1px solid #e2e8f0;
+      border-radius: 12px;
+      padding: 14px 16px;
+      display: flex;
+      flex-direction: column;
+      gap: 10px;
+    }
+
+    .admin-publish-title {
+      font-size: 0.92rem;
+      font-weight: 700;
+      color: #0f172a;
+      margin: 0;
+    }
+
+    .admin-publish-sub {
+      font-size: 0.8rem;
+      color: #64748b;
+      margin: 0;
+    }
+
+    .admin-actions {
+      display: flex;
+      justify-content: flex-end;
+      margin-top: 4px;
+    }
+
+    .btn-publish-now {
+      background: #0f172a;
+      color: #ffffff;
+      border: none;
+      padding: 8px 16px;
+      border-radius: 8px;
+      font-weight: 600;
+      font-size: 0.85rem;
+      cursor: pointer;
+      display: inline-flex;
+      align-items: center;
+      gap: 6px;
+      transition: background 0.15s ease;
+    }
+    .btn-publish-now:hover {
+      background: #334155;
+    }
+
     .spin {
       animation: spin 1s linear infinite;
     }
@@ -432,14 +644,30 @@ service cloud.firestore &#123;
 export class SettingsComponent implements OnInit {
   syncService = inject(SyncService);
   firestoreService = inject(FirestoreService);
+  updateService = inject(UpdateService);
 
   householdCode = 'HOGAR-2026';
   householdName = 'Mi Hogar';
   copiedRules = false;
 
+  // Admin update publisher fields
+  showAdminPublisher = false;
+  publishPlatform: 'android' | 'desktop' = 'android';
+  publishVersion = '1.2.1';
+  publishVersionCode = 3;
+  publishDownloadUrl = 'https://github.com/cetdelosaltos/MenuApp/releases/latest/download/MenuFamiliar.apk';
+  publishNotes = 'Corrección de sincronización de menús y generación de compras.';
+
   async ngOnInit(): Promise<void> {
     this.householdCode = this.firestoreService.householdCode();
     this.householdName = this.firestoreService.householdName();
+    if (this.updateService.isAndroid) {
+      this.publishPlatform = 'android';
+      this.publishDownloadUrl = 'https://github.com/cetdelosaltos/MenuApp/releases/latest/download/MenuFamiliar.apk';
+    } else {
+      this.publishPlatform = 'desktop';
+      this.publishDownloadUrl = 'https://github.com/cetdelosaltos/MenuApp/releases/latest/download/MenuFamiliar-Desktop-Setup.exe';
+    }
   }
 
   lastSyncDisplay(): string {
@@ -456,6 +684,35 @@ export class SettingsComponent implements OnInit {
 
   async testSync(): Promise<void> {
     await this.syncService.syncNow();
+  }
+
+  async onCheckUpdates(): Promise<void> {
+    const has = await this.updateService.checkForUpdates();
+    if (!has) {
+      alert('Tu aplicación está actualizada a la última versión disponible.');
+    }
+  }
+
+  async onPublishRelease(): Promise<void> {
+    if (!this.publishVersion.trim()) {
+      alert('Por favor indica el número de versión.');
+      return;
+    }
+    if (!this.publishDownloadUrl.trim()) {
+      alert('Por favor indica la URL de descarga directa.');
+      return;
+    }
+
+    await this.updateService.publishRelease(this.publishPlatform, {
+      version: this.publishVersion.trim(),
+      versionCode: Number(this.publishVersionCode) || undefined,
+      downloadUrl: this.publishDownloadUrl.trim(),
+      notes: this.publishNotes.trim(),
+      mandatory: false,
+      publishedAt: new Date().toISOString()
+    });
+
+    alert(`¡Versión ${this.publishVersion} para ${this.publishPlatform} publicada en Firebase! Todos los dispositivos conectados recibirán la notificación de actualización.`);
   }
 
   copyRules(): void {

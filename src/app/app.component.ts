@@ -8,6 +8,7 @@ import { SettingsComponent } from './components/settings.component';
 import { IconComponent } from './components/icon.component';
 import { SyncService } from './services/sync.service';
 import { ShoppingService } from './services/shopping.service';
+import { UpdateService } from './services/update.service';
 
 @Component({
   selector: 'app-root',
@@ -27,6 +28,7 @@ import { ShoppingService } from './services/shopping.service';
 export class AppComponent {
   syncService = inject(SyncService);
   shoppingService = inject(ShoppingService);
+  updateService = inject(UpdateService);
 
   activeTab = signal<'menu' | 'shopping' | 'history' | 'catalog' | 'settings'>('menu');
 

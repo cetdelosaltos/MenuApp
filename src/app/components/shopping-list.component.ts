@@ -71,7 +71,7 @@ import { matchesSearch, isSameText } from '../utils/string-utils';
           </div>
         </div>
 
-        <select class="quick-select" [(ngModel)]="quickCatId">
+        <select class="quick-select" [(ngModel)]="quickCatId" (change)="userSelectedQuickCat = true">
           <option *ngFor="let cat of shoppingService.categories(); trackBy: trackByCatId" [value]="cat.id">
             {{ cat.name }}
           </option>
@@ -170,43 +170,18 @@ import { matchesSearch, isSameText } from '../utils/string-utils';
                     <div class="item-title-qty-line">
                       <span class="item-name">{{ item.name }}</span>
                       
-                      <!-- Normal Quantity Display with Click-to-edit -->
-                      <button type="button" *ngIf="editingItemId !== item.id" class="btn-qty-display" (click)="startInlineQty(item)" title="Hacer clic para editar cantidad">
-                        <span *ngIf="item.quantity || item.unit" class="qty-text">
-                          {{ item.quantity }} {{ item.unit }}
-                        </span>
-                        <span *ngIf="!item.quantity && !item.unit" class="qty-placeholder">
-                          + Cant.
-                        </span>
-                        <app-icon name="pencil" [size]="11" extraClass="opacity-50"></app-icon>
-                      </button>
-                    </div>
+                      <span *ngIf="item.quantity || item.unit" class="qty-badge-pill">
+                        {{ item.quantity }} {{ item.unit }}
+                      </span>
 
-                    <!-- If currently editing quantity -->
-                    <div *ngIf="editingItemId === item.id" class="inline-qty-editor">
-                      <input
-                        type="text"
-                        inputmode="decimal"
-                        class="qty-field"
-                        [(ngModel)]="editQtyValue"
-                        placeholder="1"
-                        title="Cantidad numérica"
-                        autofocus
-                      />
-                      <input
-                        type="text"
-                        class="unit-field"
-                        [(ngModel)]="editUnitValue"
-                        placeholder="Kilo/paq"
-                        title="Unidad o descripción"
-                      />
-                      <!-- Ok button (✓) -->
-                      <button type="button" class="btn-qty-ok" (click)="saveInlineQty(item)" title="Confirmar cantidad">
-                        <app-icon name="check" [size]="13"></app-icon>
-                      </button>
-                      <!-- Cancel button (✕) -->
-                      <button type="button" class="btn-qty-cancel" (click)="cancelInlineQty()" title="Cancelar">
-                        <app-icon name="x" [size]="13"></app-icon>
+                      <!-- Botón discreto para abrir modal de edición rápida -->
+                      <button
+                        type="button"
+                        class="btn-edit-item-quick"
+                        (click)="openEditModal(item)"
+                        title="Editar producto (nombre, categoría, cantidad)"
+                      >
+                        <app-icon name="pencil" [size]="12"></app-icon>
                       </button>
                     </div>
 
@@ -313,6 +288,14 @@ import { matchesSearch, isSameText } from '../utils/string-utils';
                 <span *ngIf="item.lastPurchasedAt" class="purchased-date-badge">
                   ✓ {{ formatPurchaseDate(item.lastPurchasedAt) }}
                 </span>
+                <button
+                  type="button"
+                  class="btn-edit-item-quick"
+                  (click)="openEditModal(item)"
+                  title="Editar producto"
+                >
+                  <app-icon name="pencil" [size]="12"></app-icon>
+                </button>
               </div>
             </div>
 
@@ -336,6 +319,93 @@ import { matchesSearch, isSameText } from '../utils/string-utils';
           </div>
         </div>
 
+      </div>
+
+      <!-- MODAL DE EDICIÓN RÁPIDA DE PRODUCTO -->
+      <div *ngIf="itemBeingEdited" class="modal-backdrop animate-fade" (click)="closeEditModal()">
+        <div class="modal-container" (click)="$event.stopPropagation()">
+          
+          <!-- Handle para arrastrar en móvil (Bottom sheet) -->
+          <div class="bottom-sheet-handle-bar">
+            <div class="bottom-sheet-handle"></div>
+          </div>
+
+          <!-- Cabecera del modal -->
+          <div class="modal-header">
+            <div class="modal-title-wrap">
+              <h3 class="modal-title">Editar Producto</h3>
+              <span class="cat-pill-sm" [style.background-color]="getCatColor(editCatValue) + '20'" [style.color]="getCatColor(editCatValue)">
+                {{ getCatName(editCatValue) }}
+              </span>
+            </div>
+            <button type="button" class="btn-close-modal" (click)="closeEditModal()" title="Cerrar">✕</button>
+          </div>
+
+          <!-- Cuerpo del modal -->
+          <div class="modal-body">
+            <div class="modal-form-group">
+              <label class="modal-label">Nombre del producto</label>
+              <input
+                type="text"
+                class="modal-input"
+                [(ngModel)]="editNameValue"
+                placeholder="Ej. Churrasco de Pollo"
+                (keyup.enter)="saveModalEdit()"
+                autofocus
+              />
+            </div>
+
+            <div class="modal-form-group">
+              <label class="modal-label">Categoría para la lista de compras</label>
+              <select class="modal-select" [(ngModel)]="editCatValue">
+                <option *ngFor="let cat of shoppingService.categories(); trackBy: trackByCatId" [value]="cat.id">
+                  {{ cat.name }}
+                </option>
+              </select>
+            </div>
+
+            <div class="modal-form-row">
+              <div class="modal-form-group flex-1">
+                <label class="modal-label">Cantidad</label>
+                <input
+                  type="text"
+                  inputmode="decimal"
+                  class="modal-input"
+                  [(ngModel)]="editQtyValue"
+                  placeholder="Ej. 1 o 2.5"
+                  (keyup.enter)="saveModalEdit()"
+                />
+              </div>
+              <div class="modal-form-group flex-1">
+                <label class="modal-label">Unidad</label>
+                <input
+                  type="text"
+                  class="modal-input"
+                  [(ngModel)]="editUnitValue"
+                  placeholder="kg, paq, latas..."
+                  (keyup.enter)="saveModalEdit()"
+                />
+              </div>
+            </div>
+
+            <div *ngIf="itemBeingEdited.lastPurchasedAt" class="modal-last-purchased">
+              <app-icon name="check" [size]="14" extraClass="text-emerald"></app-icon>
+              <span>Última compra registrada: {{ formatPurchaseDate(itemBeingEdited.lastPurchasedAt) }}</span>
+            </div>
+          </div>
+
+          <!-- Pie del modal -->
+          <div class="modal-footer">
+            <button type="button" class="btn-modal-cancel" (click)="closeEditModal()">
+              Cancelar
+            </button>
+            <button type="button" class="btn-modal-save" (click)="saveModalEdit()">
+              <app-icon name="check" [size]="16"></app-icon>
+              <span>Guardar Cambios</span>
+            </button>
+          </div>
+
+        </div>
       </div>
 
     </div>
@@ -766,79 +836,233 @@ import { matchesSearch, isSameText } from '../utils/string-utils';
       font-weight: 500;
     }
 
-    .btn-qty-display {
+    .qty-badge-pill {
       display: inline-flex;
       align-items: center;
-      gap: 4px;
-      padding: 2px 6px;
+      padding: 2px 7px;
       background: #f1f5f9;
+      color: #334155;
       border-radius: 5px;
       font-size: 0.76rem;
       font-weight: 600;
-      color: #334155;
       border: 1px solid #e2e8f0;
       flex-shrink: 0;
     }
-    .btn-qty-display:hover {
-      background: #e2e8f0;
-      color: #0f172a;
-    }
 
-    .qty-placeholder {
-      color: #94a3b8;
-      font-style: italic;
-    }
-
-    .inline-qty-editor {
-      display: flex;
-      align-items: center;
-      gap: 4px;
-      margin: 2px 0;
-    }
-
-    .qty-field {
-      width: 42px;
-      padding: 3px 5px;
-      border: 1px solid #10b981;
+    .btn-edit-item-quick {
+      width: 22px;
+      height: 22px;
       border-radius: 5px;
-      font-size: 0.78rem;
-      text-align: center;
-      outline: none;
-    }
-
-    .unit-field {
-      width: 60px;
-      padding: 3px 5px;
-      border: 1px solid #10b981;
-      border-radius: 5px;
-      font-size: 0.78rem;
-      outline: none;
-    }
-
-    .btn-qty-ok {
-      width: 24px;
-      height: 24px;
-      background: #10b981;
-      color: #ffffff;
-      border-radius: 5px;
-      display: flex;
-      align-items: center;
-      justify-content: center;
-      border: none;
-      cursor: pointer;
-    }
-
-    .btn-qty-cancel {
-      width: 24px;
-      height: 24px;
-      background: #f1f5f9;
+      border: 1px solid #e2e8f0;
+      background: #ffffff;
       color: #64748b;
-      border-radius: 5px;
+      display: inline-flex;
+      align-items: center;
+      justify-content: center;
+      cursor: pointer;
+      flex-shrink: 0;
+      transition: all 0.15s ease;
+      opacity: 0.7;
+    }
+    .btn-edit-item-quick:hover {
+      opacity: 1;
+      border-color: #10b981;
+      background: #ecfdf5;
+      color: #059669;
+    }
+
+    /* Modal de Edición Rápida de Producto */
+    .modal-backdrop {
+      position: fixed;
+      top: 0; left: 0; right: 0; bottom: 0;
+      background: rgba(15, 23, 42, 0.65);
+      backdrop-filter: blur(4px);
+      z-index: 99999;
       display: flex;
       align-items: center;
       justify-content: center;
+      padding: 16px;
+    }
+
+    .modal-container {
+      background: #ffffff;
+      border-radius: 16px;
+      width: 100%;
+      max-width: 440px;
+      box-shadow: 0 20px 40px -10px rgba(0, 0, 0, 0.25);
+      border: 1px solid #e2e8f0;
+      overflow: hidden;
+      display: flex;
+      flex-direction: column;
+      animation: modalScaleIn 0.2s cubic-bezier(0.16, 1, 0.3, 1);
+    }
+
+    @keyframes modalScaleIn {
+      from { transform: scale(0.95); opacity: 0; }
+      to { transform: scale(1); opacity: 1; }
+    }
+
+    .bottom-sheet-handle-bar {
+      display: none;
+      justify-content: center;
+      padding: 8px 0 2px;
+      background: #f8fafc;
+    }
+
+    .bottom-sheet-handle {
+      width: 36px;
+      height: 4px;
+      border-radius: 9999px;
+      background: #cbd5e1;
+    }
+
+    .modal-header {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      padding: 14px 18px;
+      background: #f8fafc;
+      border-bottom: 1px solid #e2e8f0;
+    }
+
+    .modal-title-wrap {
+      display: flex;
+      align-items: center;
+      gap: 10px;
+    }
+
+    .modal-title {
+      font-size: 1.05rem;
+      font-weight: 700;
+      color: #0f172a;
+      margin: 0;
+    }
+
+    .btn-close-modal {
+      background: transparent;
       border: none;
+      font-size: 1.1rem;
+      color: #64748b;
       cursor: pointer;
+      width: 28px;
+      height: 28px;
+      border-radius: 6px;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      transition: all 0.15s;
+    }
+    .btn-close-modal:hover {
+      background: #fee2e2;
+      color: #dc2626;
+    }
+
+    .modal-body {
+      padding: 18px;
+      display: flex;
+      flex-direction: column;
+      gap: 14px;
+      background: #ffffff;
+    }
+
+    .modal-form-group {
+      display: flex;
+      flex-direction: column;
+      gap: 5px;
+    }
+
+    .modal-form-group.flex-1 {
+      flex: 1;
+    }
+
+    .modal-form-row {
+      display: flex;
+      gap: 10px;
+      width: 100%;
+    }
+
+    .modal-label {
+      font-size: 0.8rem;
+      font-weight: 600;
+      color: #475569;
+    }
+
+    .modal-input, .modal-select {
+      width: 100%;
+      padding: 9px 12px;
+      border: 1.5px solid #cbd5e1;
+      border-radius: 8px;
+      font-size: 0.92rem;
+      color: #0f172a;
+      background: #ffffff;
+      box-sizing: border-box;
+      outline: none;
+      transition: border-color 0.15s, box-shadow 0.15s;
+    }
+    .modal-input:focus, .modal-select:focus {
+      border-color: #10b981;
+      box-shadow: 0 0 0 3px rgba(16, 185, 129, 0.15);
+    }
+
+    .modal-last-purchased {
+      display: flex;
+      align-items: center;
+      gap: 6px;
+      font-size: 0.78rem;
+      color: #059669;
+      background: #ecfdf5;
+      padding: 8px 10px;
+      border-radius: 6px;
+      border: 1px solid #a7f3d0;
+    }
+
+    .modal-footer {
+      display: flex;
+      align-items: center;
+      justify-content: flex-end;
+      gap: 10px;
+      padding: 12px 18px;
+      background: #f8fafc;
+      border-top: 1px solid #e2e8f0;
+    }
+
+    .btn-modal-cancel {
+      padding: 9px 16px;
+      background: #ffffff;
+      border: 1px solid #cbd5e1;
+      color: #475569;
+      border-radius: 8px;
+      font-weight: 600;
+      font-size: 0.88rem;
+      cursor: pointer;
+      transition: all 0.15s;
+    }
+    .btn-modal-cancel:hover {
+      background: #f1f5f9;
+      color: #1e293b;
+    }
+
+    .btn-modal-save {
+      display: flex;
+      align-items: center;
+      gap: 6px;
+      padding: 9px 18px;
+      background: #10b981;
+      border: none;
+      color: #ffffff;
+      border-radius: 8px;
+      font-weight: 600;
+      font-size: 0.88rem;
+      cursor: pointer;
+      transition: background 0.15s;
+    }
+    .btn-modal-save:hover {
+      background: #059669;
+    }
+
+    @keyframes slideUpSheet {
+      from { transform: translateY(100%); opacity: 0.8; }
+      to { transform: translateY(0); opacity: 1; }
     }
 
     /* Actions Column */
@@ -1139,6 +1363,28 @@ import { matchesSearch, isSameText } from '../utils/string-utils';
       .btn-pantry, .btn-mark-bought {
         padding: 5px 6px;
       }
+
+      /* Modal Bottom-Sheet en móvil */
+      .modal-backdrop {
+        padding: 0;
+        align-items: flex-end;
+      }
+
+      .modal-container {
+        max-width: 100%;
+        border-radius: 20px 20px 0 0;
+        border-bottom: none;
+        max-height: 90vh;
+        animation: slideUpSheet 0.25s cubic-bezier(0.16, 1, 0.3, 1);
+      }
+
+      .bottom-sheet-handle-bar {
+        display: flex;
+      }
+
+      .modal-footer {
+        padding: 14px 18px max(28px, calc(18px + env(safe-area-inset-bottom, 0px)));
+      }
     }
   `]
 })
@@ -1149,6 +1395,7 @@ export class ShoppingListComponent {
   // Quick Add Model
   quickName = '';
   quickCatId = 'cat_viveres';
+  userSelectedQuickCat = false;
   quickQty = '';
   quickUnit = '';
 
@@ -1159,8 +1406,10 @@ export class ShoppingListComponent {
   showAddModal = false;
   isPurchasedExpanded = true;
 
-  // Inline Quantity Edit state
-  editingItemId: string | null = null;
+  // Modal Quick Edit state
+  itemBeingEdited: ShoppingItem | null = null;
+  editNameValue = '';
+  editCatValue = '';
   editQtyValue = '';
   editUnitValue = '';
 
@@ -1169,6 +1418,7 @@ export class ShoppingListComponent {
     if (!q) {
       this.showQuickSuggestions = false;
       this.filteredQuickIngredients = [];
+      this.userSelectedQuickCat = false;
       return;
     }
 
@@ -1179,10 +1429,12 @@ export class ShoppingListComponent {
 
     this.showQuickSuggestions = this.filteredQuickIngredients.length > 0;
 
-    // If exact match or first match found, auto-select its category
-    const exact = allIngs.find(i => isSameText(i.name, q));
-    if (exact && exact.categoryId) {
-      this.quickCatId = exact.categoryId;
+    // Auto-seleccionar categoría solo si el usuario no ha elegido una explícitamente en el selector
+    if (!this.userSelectedQuickCat) {
+      const exact = allIngs.find(i => isSameText(i.name, q));
+      if (exact && exact.categoryId) {
+        this.quickCatId = exact.categoryId;
+      }
     }
   }
 
@@ -1190,6 +1442,7 @@ export class ShoppingListComponent {
     this.quickName = ing.name;
     if (ing.categoryId) {
       this.quickCatId = ing.categoryId;
+      this.userSelectedQuickCat = true;
     }
     this.showQuickSuggestions = false;
   }
@@ -1213,7 +1466,13 @@ export class ShoppingListComponent {
     this.quickName = '';
     this.quickQty = '';
     this.quickUnit = '';
+    this.userSelectedQuickCat = false;
     this.showQuickSuggestions = false;
+  }
+
+  async onItemCategoryChange(item: ShoppingItem, newCatId: string): Promise<void> {
+    if (!newCatId || newCatId === item.categoryId) return;
+    await this.shoppingService.updateItemCategory(item.id, newCatId);
   }
 
   trackByGroupId(index: number, group: CategoryShoppingGroup): string {
@@ -1268,19 +1527,34 @@ export class ShoppingListComponent {
     this.shoppingService.removeItem(itemId);
   }
 
-  startInlineQty(item: ShoppingItem): void {
-    this.editingItemId = item.id;
+  openEditModal(item: ShoppingItem): void {
+    this.itemBeingEdited = item;
+    this.editNameValue = item.name;
+    this.editCatValue = item.categoryId;
     this.editQtyValue = item.quantity || '';
     this.editUnitValue = item.unit || '';
   }
 
-  async saveInlineQty(item: ShoppingItem): Promise<void> {
-    await this.shoppingService.updateQuantity(item.id, this.editQtyValue, this.editUnitValue);
-    this.editingItemId = null;
+  closeEditModal(): void {
+    this.itemBeingEdited = null;
   }
 
-  cancelInlineQty(): void {
-    this.editingItemId = null;
+  async saveModalEdit(): Promise<void> {
+    if (!this.itemBeingEdited) return;
+    const item = this.itemBeingEdited;
+    const cleanName = this.editNameValue.trim() || item.name;
+    const catId = this.editCatValue || item.categoryId;
+    const qty = this.editQtyValue.trim();
+    const unit = this.editUnitValue.trim();
+
+    if (catId !== item.categoryId || cleanName !== item.name) {
+      await this.shoppingService.updateItemCategory(item.id, catId);
+    }
+    if (qty !== item.quantity || unit !== item.unit) {
+      await this.shoppingService.updateQuantity(item.id, qty, unit);
+    }
+
+    this.itemBeingEdited = null;
   }
 
   togglePurchasedExpanded(): void {
